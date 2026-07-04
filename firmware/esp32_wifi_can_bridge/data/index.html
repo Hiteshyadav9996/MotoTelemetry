@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#050608" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Dominar TFT" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <title>Dominar 400 RPM Band</title>
+  <style>
+    :root {
+      --bg: #050608;
+      --screen: #080d13;
+      --screen-2: #121a23;
+      --text: #f5f3ea;
+      --muted: #828b96;
+      --rpm-low: #8c6208;
+      --rpm-mid: #d99916;
+      --rpm-hot: #ff6a1f;
+      --stroke: 44px;
+      --active-stroke: 42px;
+      --boundary-stroke: 48px;
+      --edge-gap: 76px;
+      --ui-right: max(42px, calc(env(safe-area-inset-right, 0px) + 22px));
+      --readout-top: 188px;
+      --readout-gap: 54px;
+      --gear-width: 76px;
+      --gear-size: clamp(54px, 9vw, 86px);
+      --gear-top: 24px;
+      --speed-column-width: clamp(270px, 36vw, 340px);
+      --speed-size: clamp(92px, 15vw, 142px);
+      --speed-unit-size: clamp(12px, 1.7vw, 18px);
+      --temp-top-gap: 34px;
+      --temp-value-gap: 12px;
+      --temp-icon-size: 24px;
+      --temp-bar-height: 18px;
+      --temp-value-size: clamp(15px, 2vw, 22px);
+      --shadow: rgba(0,0,0,0.58);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(217,153,22,0.14), transparent 22rem),
+        radial-gradient(circle at 92% 20%, rgba(255,106,31,0.08), transparent 24rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+    }
+
+    .phone-frame {
+      position: relative;
+      width: min(100vw, 896px, calc(100svh * 2.164));
+      aspect-ratio: 896 / 414;
+      overflow: hidden;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.045), transparent 32%),
+        linear-gradient(180deg, var(--screen-2), var(--screen) 42%, #050608);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 28px;
+      box-shadow: 0 24px 80px var(--shadow), inset 0 0 0 1px rgba(255,255,255,0.045);
+    }
+
+    .phone-frame::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      background:
+        linear-gradient(118deg, transparent 0 43%, rgba(255,255,255,0.045) 43.4% 56%, transparent 56.4%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 5px);
+    }
+
+    .rpm-stage {
+      position: absolute;
+      inset: 0;
+    }
+
+    .rpm-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .rpm-track,
+    .rpm-redzone,
+    .rpm-boundary,
+    .rpm-active {
+      fill: none;
+      stroke-linecap: butt;
+      stroke-linejoin: round;
+    }
+
+    .rpm-track {
+      stroke: rgba(255,255,255,0.105);
+      stroke-width: var(--stroke);
+    }
+
+    .rpm-redzone {
+      stroke: rgba(255,60,52,0.18);
+      stroke-width: var(--stroke);
+      filter: drop-shadow(0 0 10px rgba(255,48,43,0.24));
+    }
+
+    .rpm-boundary {
+      stroke: rgba(255,255,255,0.86);
+      stroke-width: var(--boundary-stroke);
+      filter: drop-shadow(0 0 8px rgba(255,255,255,0.18));
+      transition: stroke-dashoffset 70ms linear, stroke-width 70ms linear, filter 70ms linear;
+      will-change: stroke-dashoffset;
+    }
+
+    .rpm-active {
+      stroke: url(#rpmGradient);
+      stroke-width: var(--active-stroke);
+      filter: drop-shadow(0 0 16px hsla(var(--rpm-hue, 42), 100%, 55%, 0.36));
+      transition: stroke-dashoffset 70ms linear, stroke-width 70ms linear, filter 70ms linear;
+      will-change: stroke-dashoffset;
+    }
+
+    .rpm-tick {
+      stroke: rgba(255,255,255,0.18);
+      stroke-width: 1.7;
+      stroke-linecap: butt;
+      transition: stroke 70ms linear, stroke-width 70ms linear, filter 70ms linear;
+    }
+
+    .rpm-tick-minor {
+      stroke-width: 1.1;
+    }
+
+    .rpm-number {
+      font-weight: 950;
+      font-style: italic;
+      letter-spacing: 0;
+      text-anchor: middle;
+      dominant-baseline: central;
+      fill: rgba(245,243,234,0.32);
+      stroke: rgba(255,255,255,0.22);
+      stroke-width: 0.75px;
+      paint-order: stroke fill;
+      filter: blur(1.7px);
+      transition: fill 70ms linear, font-size 70ms linear, filter 70ms linear, stroke 70ms linear, stroke-width 70ms linear, text-shadow 70ms linear;
+    }
+
+    .rpm-number.active {
+      fill: hsl(var(--hue), 96%, 58%);
+      filter: blur(0);
+      text-shadow: 0 0 18px hsla(var(--hue), 100%, 55%, 0.75);
+    }
+
+    .rpm-label {
+      position: absolute;
+      right: var(--ui-right);
+      top: calc(var(--edge-gap) + var(--stroke) + 18px);
+      z-index: 5;
+      color: rgba(245,243,234,0.82);
+      font-size: clamp(10px, 1.25vw, 15px);
+      font-weight: 950;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rpm-label span {
+      display: block;
+      color: var(--rpm-mid);
+      font-size: 0.82em;
+      letter-spacing: 0.05em;
+    }
+
+    .drive-readout {
+      position: absolute;
+      top: var(--readout-top);
+      right: var(--ui-right);
+      z-index: 6;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      gap: var(--readout-gap);
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    .gear-value {
+      width: var(--gear-width);
+      text-align: center;
+      color: rgba(245,243,234,0.78);
+      font-size: var(--gear-size);
+      font-weight: 950;
+      line-height: 0.82;
+      letter-spacing: 0;
+      margin-top: var(--gear-top);
+      transition: color 90ms linear, text-shadow 90ms linear;
+    }
+
+    .gear-value.neutral {
+      color: #47e878;
+      text-shadow: 0 0 18px rgba(71,232,120,0.42);
+    }
+
+    .speed-column {
+      width: var(--speed-column-width);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .speed-block {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 14px;
+      text-align: right;
+      white-space: nowrap;
+      width: 100%;
+    }
+
+    .speed-value {
+      display: inline-block;
+      width: 3ch;
+      text-align: right;
+      color: #f7f4ea;
+      font-size: var(--speed-size);
+      font-weight: 980;
+      line-height: 0.78;
+      letter-spacing: 0;
+    }
+
+    .speed-unit {
+      color: rgba(245,243,234,0.74);
+      font-size: var(--speed-unit-size);
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .engine-temp {
+      --temp-pct: 0%;
+      --temp-color: #28a9ff;
+      --temp-glow: rgba(40,169,255,0.36);
+      width: 88%;
+      max-width: 100%;
+      margin-top: var(--temp-top-gap);
+      color: rgba(245,243,234,0.76);
+    }
+
+    .temp-meter {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .temp-sign {
+      width: var(--temp-icon-size);
+      height: var(--temp-icon-size);
+      flex: 0 0 var(--temp-icon-size);
+      color: rgba(255,255,255,0.9);
+      filter: drop-shadow(0 0 8px rgba(255,255,255,0.18));
+      stroke-width: 2.2;
+    }
+
+    .temp-value {
+      display: block;
+      width: calc(100% - 34px);
+      margin-top: var(--temp-value-gap);
+      margin-left: 34px;
+      color: var(--temp-color);
+      font-size: var(--temp-value-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: center;
+      text-shadow: 0 0 12px var(--temp-glow);
+      transition: color 120ms linear, text-shadow 120ms linear;
+    }
+
+    .temp-bar {
+      position: relative;
+      flex: 1 1 auto;
+      width: auto;
+      height: var(--temp-bar-height);
+      overflow: hidden;
+      background: rgba(255,255,255,0.12);
+    }
+
+    .temp-bar::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--temp-color);
+      clip-path: inset(0 calc(100% - var(--temp-pct)) 0 0);
+      transition: background-color 120ms linear, clip-path 120ms linear;
+    }
+
+    .temp-tick {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      z-index: 2;
+      width: 1px;
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 0 5px rgba(255,255,255,0.28);
+      transform: translateX(-50%);
+    }
+
+    .temp-tick:first-child {
+      transform: none;
+    }
+
+    .temp-tick:last-child {
+      transform: translateX(-100%);
+    }
+
+    .rpm-alert .rpm-active,
+    .rpm-limited .rpm-active {
+      stroke: #ff302b;
+      animation: rpmLimitBlink 72ms steps(2, end) infinite;
+      filter: brightness(1.4) saturate(1.25) drop-shadow(0 0 22px rgba(255,48,43,0.7));
+    }
+
+    .rpm-alert .rpm-boundary,
+    .rpm-limited .rpm-boundary {
+      stroke: rgba(255,90,86,0.92);
+      animation: rpmLimitBlink 72ms steps(2, end) infinite;
+      filter: drop-shadow(0 0 14px rgba(255,48,43,0.58));
+    }
+
+    .rpm-alert .rpm-number,
+    .rpm-limited .rpm-number {
+      fill: #ff302b !important;
+      stroke: rgba(255,255,255,0.9) !important;
+      stroke-width: 1.75px !important;
+      filter: blur(0) drop-shadow(0 0 14px rgba(255,48,43,0.72)) !important;
+      text-shadow: 0 0 18px rgba(255,48,43,0.82) !important;
+      animation: rpmLimitBlink 72ms steps(2, end) infinite;
+    }
+
+    @keyframes rpmLimitBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.22; }
+    }
+
+    @media (max-width: 920px) and (orientation: landscape) {
+      html,
+      body {
+        background: var(--screen);
+      }
+
+      .phone-frame {
+        width: 100vw;
+        height: 100svh;
+        aspect-ratio: auto;
+        border: 0;
+        border-radius: 0;
+      }
+
+      .phone-frame::before {
+        background: repeating-linear-gradient(90deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 5px);
+      }
+    }
+
+    @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+      html,
+      body {
+        width: 100vw;
+        height: 100svh;
+        min-height: 100svh;
+        background: var(--screen);
+      }
+
+      body {
+        display: block;
+      }
+
+      .phone-frame {
+        width: 100vw;
+        height: 100svh;
+        aspect-ratio: auto;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .phone-frame::before {
+        background: repeating-linear-gradient(90deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 5px);
+      }
+    }
+
+    @media (max-width: 840px) and (orientation: landscape) {
+      :root {
+        --ui-right: max(26px, calc(env(safe-area-inset-right, 0px) + 16px));
+        --readout-top: 172px;
+        --readout-gap: 34px;
+        --gear-width: 58px;
+        --gear-size: clamp(44px, 8vw, 68px);
+        --gear-top: 20px;
+        --speed-column-width: clamp(238px, 35vw, 284px);
+        --speed-size: clamp(82px, 14vw, 116px);
+        --speed-unit-size: clamp(10px, 1.45vw, 14px);
+        --temp-top-gap: 30px;
+        --temp-value-gap: 12px;
+        --temp-icon-size: 20px;
+        --temp-bar-height: 14px;
+        --temp-value-size: clamp(13px, 1.75vw, 18px);
+      }
+    }
+
+    @media (max-height: 360px) and (orientation: landscape) {
+      :root {
+        --readout-top: 154px;
+        --gear-top: 16px;
+        --speed-size: clamp(76px, 13vw, 104px);
+        --temp-top-gap: 22px;
+        --temp-value-gap: 10px;
+        --temp-bar-height: 12px;
+        --temp-value-size: clamp(12px, 1.55vw, 16px);
+      }
+    }
+
+    @supports (height: 100dvh) {
+      @media (max-width: 920px) and (orientation: landscape) {
+        .phone-frame {
+          height: 100dvh;
+        }
+      }
+
+      @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+        html,
+        body,
+        .phone-frame {
+          height: 100dvh;
+          min-height: 100dvh;
+        }
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="phone-frame" aria-label="RPM, speed, and gear">
+    <section class="rpm-stage" id="rpmStage" aria-label="RPM">
+      <svg class="rpm-svg" viewBox="0 0 896 414" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="rpmGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#8c6208" />
+            <stop offset="58%" stop-color="#d99916" />
+            <stop offset="78%" stop-color="#ff9a1f" />
+            <stop offset="100%" stop-color="#ff5c22" />
+          </linearGradient>
+        </defs>
+
+        <!-- Visible left/top band gap is 76px. Centerline is edge gap + half stroke: 76 + 22 = 98. -->
+        <path
+          class="rpm-track"
+          id="rpmPath"
+          d="M 98 370 L 98 238 Q 98 98 268 98 L 830 98"
+        />
+        <path
+          class="rpm-redzone"
+          id="rpmEngineRedzone"
+          d="M 0 0 L 0 0"
+        />
+        <path
+          class="rpm-boundary"
+          id="rpmArcBoundary"
+          d="M 98 370 L 98 238 Q 98 98 268 98 L 830 98"
+        />
+        <path
+          class="rpm-active"
+          id="rpmArcActive"
+          d="M 98 370 L 98 238 Q 98 98 268 98 L 830 98"
+        />
+
+        <g id="rpmTicks"></g>
+        <g id="rpmNumbers"></g>
+      </svg>
+
+      <div class="rpm-label">RPM <span>x1000</span></div>
+    </section>
+
+    <section class="drive-readout" aria-label="Speed and gear">
+      <div class="gear-value" id="gearValue">N</div>
+      <div class="speed-column">
+        <div class="speed-block">
+          <span class="speed-value" id="speedValue">0</span>
+          <span class="speed-unit">km/h</span>
+        </div>
+        <div class="engine-temp" id="engineTempGauge" aria-label="Engine temperature">
+          <div class="temp-meter">
+            <svg class="temp-sign" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14 14.8V5a4 4 0 0 0-8 0v9.8a6 6 0 1 0 8 0Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M10 6v10" fill="none" stroke="currentColor" stroke-linecap="round" />
+              <path d="M17 7h4M17 11h4M17 15h4" fill="none" stroke="currentColor" stroke-linecap="round" />
+            </svg>
+            <div class="temp-bar" aria-hidden="true">
+              <span class="temp-tick" style="left: 25%"></span>
+              <span class="temp-tick" style="left: 50%"></span>
+              <span class="temp-tick" style="left: 75%"></span>
+              <span class="temp-tick" style="left: 100%"></span>
+            </div>
+          </div>
+          <span class="temp-value" id="engineTempValue">75.0 C</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      sseConnected: false,
+      rpmLength: 1,
+      activeLength: 1,
+      activePathD: "",
+      activeStroke: 0,
+      activePathCache: new Map(),
+      redzoneStart: null,
+      rpmNumbers: [],
+      rpmTicks: [],
+      pendingTelemetry: null,
+      rafId: 0,
+      lastRenderAt: 0,
+      lastDetailAt: 0,
+      lastDetailRpm: -1,
+      lastHue: null,
+      lastSpeedText: "",
+      lastGearText: "",
+      lastTempText: "",
+      lowPower: false,
+      frameMs: 33,
+      detailFrameMs: 66,
+      demoStart: performance.now(),
+      seq: 0
+    };
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const $ = (id) => document.getElementById(id);
+    const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+    const isNum = (x) => typeof x === "number" && Number.isFinite(x);
+    const first = (obj, keys, fallback = 0) => {
+      for (const key of keys) {
+        if (obj && isNum(obj[key])) return obj[key];
+      }
+      return fallback;
+    };
+    const firstText = (obj, keys, fallback = "") => {
+      for (const key of keys) {
+        const value = obj && obj[key];
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+          return String(value).trim();
+        }
+      }
+      return fallback;
+    };
+
+    function rpmHueFor(mark) {
+      return 42 - clamp(mark / 10, 0, 1) * 20;
+    }
+
+    function pointAt(path, pct) {
+      return path.getPointAtLength(state.rpmLength * clamp(pct, 0, 1));
+    }
+
+    function unitTangent(path, pct) {
+      const before = pointAt(path, pct - 0.006);
+      const after = pointAt(path, pct + 0.006);
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: dx / len, y: dy / len };
+    }
+
+    function numberOffset(mark) {
+      if (mark <= 1) {
+        return { x: -58, y: 0 };
+      }
+      if (mark === 2) {
+        return { x: -54, y: -28 };
+      }
+      if (mark === 3) {
+        return { x: -28, y: -58 };
+      }
+      return { x: 0, y: -62 };
+    }
+
+    function rpmPathD(edgeCenter, topCenter) {
+      const x = edgeCenter.toFixed(1);
+      const y = topCenter.toFixed(1);
+      return `M ${x} 370 L ${x} 238 Q ${x} ${y} 268 ${y} L 830 ${y}`;
+    }
+
+    function tickOffset(tangent, length) {
+      return {
+        x: -tangent.y * length,
+        y: tangent.x * length
+      };
+    }
+
+    function setRpmZone(id, startRpm, endRpm) {
+      const zone = $(id);
+      const path = $("rpmPath");
+      const start = pointAt(path, startRpm / 10000);
+      const end = pointAt(path, endRpm / 10000);
+
+      zone.setAttribute("d", `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} L ${end.x.toFixed(1)} ${end.y.toFixed(1)}`);
+    }
+
+    function rpmLimitForTemp(engineTemp) {
+      if (engineTemp < 75) return 5000;
+      return null;
+    }
+
+    function rpmRedzoneStartForTemp(engineTemp) {
+      return engineTemp < 75 ? 5000 : 9500;
+    }
+
+    function buildRpmScale() {
+      const path = $("rpmPath");
+      state.rpmLength = path.getTotalLength();
+      state.rpmNumbers = [];
+      state.rpmTicks = [];
+
+      const ticks = $("rpmTicks");
+      const numbers = $("rpmNumbers");
+      ticks.innerHTML = "";
+      numbers.innerHTML = "";
+
+      for (let halfMark = 1; halfMark < 20; halfMark += 2) {
+        const mark = halfMark / 2;
+        const pct = mark / 10;
+        const p = pointAt(path, pct);
+        const tangent = unitTangent(path, pct);
+        const tick = tickOffset(tangent, 14);
+
+        const tickLine = document.createElementNS(SVG_NS, "line");
+        tickLine.setAttribute("class", "rpm-tick rpm-tick-minor");
+        tickLine.setAttribute("x1", String(p.x));
+        tickLine.setAttribute("y1", String(p.y));
+        tickLine.setAttribute("x2", String(p.x + tick.x));
+        tickLine.setAttribute("y2", String(p.y + tick.y));
+        tickLine.dataset.rpmMark = String(mark);
+        tickLine.dataset.tickType = "minor";
+        ticks.appendChild(tickLine);
+        state.rpmTicks.push({ node: tickLine, mark, isMajor: false, key: "" });
+      }
+
+      for (let mark = 0; mark <= 10; mark += 1) {
+        const pct = mark / 10;
+        const p = pointAt(path, pct);
+        const tangent = unitTangent(path, pct);
+        const tick = tickOffset(tangent, 24);
+        const label = numberOffset(mark);
+
+        const tickLine = document.createElementNS(SVG_NS, "line");
+        tickLine.setAttribute("class", "rpm-tick rpm-tick-major");
+        tickLine.setAttribute("x1", String(p.x));
+        tickLine.setAttribute("y1", String(p.y));
+        tickLine.setAttribute("x2", String(p.x + tick.x));
+        tickLine.setAttribute("y2", String(p.y + tick.y));
+        tickLine.dataset.rpmMark = String(mark);
+        tickLine.dataset.tickType = "major";
+        ticks.appendChild(tickLine);
+        state.rpmTicks.push({ node: tickLine, mark, isMajor: true, key: "" });
+
+        const text = document.createElementNS(SVG_NS, "text");
+        text.setAttribute("class", "rpm-number");
+        text.dataset.rpmMark = String(mark);
+        text.setAttribute("x", String(p.x + label.x));
+        text.setAttribute("y", String(p.y + label.y));
+        text.textContent = String(mark);
+        numbers.appendChild(text);
+        state.rpmNumbers.push({ node: text, mark, hue: rpmHueFor(mark), key: "" });
+      }
+
+      setRpmZone("rpmEngineRedzone", 9500, 10000);
+      state.redzoneStart = 9500;
+    }
+
+    function updateRpmNumbers(rpm) {
+      const rpmK = clamp(rpm / 1000, 0, 10);
+      const steps = 20;
+
+      state.rpmNumbers.forEach((entry) => {
+        const { node, mark, hue } = entry;
+        const distance = Math.abs(rpmK - mark);
+        const intensity = Math.round(clamp(1 - distance, 0, 1) * steps) / steps;
+        const nearGlow = Math.round(clamp(1 - distance / 1.35, 0, 1) * steps) / steps;
+        const isHighlighted = intensity > 0.02;
+        const key = `${intensity}:${nearGlow}`;
+        if (entry.key === key) return;
+        entry.key = key;
+
+        const alpha = isHighlighted ? 0.42 + intensity * 0.58 : 0.26 + nearGlow * 0.18;
+        const sizeIntensity = Math.pow(intensity, 1.15);
+        const fontSize = 22 + sizeIntensity * 44;
+        const blur = 1.7 * (1 - intensity);
+        const glow = 6 + intensity * 14;
+        const glowAlpha = 0.28 + intensity * 0.48;
+        const outlineAlpha = 0.22 + intensity * 0.68;
+        const outlineWidth = 0.75 + intensity * 1.35;
+
+        node.classList.toggle("active", isHighlighted);
+        node.style.setProperty("--hue", hue.toFixed(1));
+        node.style.fontSize = `${fontSize.toFixed(1)}px`;
+        node.style.filter = `blur(${blur.toFixed(2)}px)`;
+        node.style.stroke = `rgba(255,255,255,${outlineAlpha.toFixed(2)})`;
+        node.style.strokeWidth = `${outlineWidth.toFixed(2)}px`;
+        node.style.fill = isHighlighted
+          ? `hsla(${hue.toFixed(1)}, 96%, 58%, ${alpha.toFixed(2)})`
+          : `rgba(245,243,234,${alpha.toFixed(2)})`;
+        node.style.textShadow = isHighlighted
+          ? `0 0 ${glow.toFixed(1)}px hsla(${hue.toFixed(1)}, 100%, 55%, ${glowAlpha.toFixed(2)})`
+          : "none";
+      });
+    }
+
+    function updateRpmTicks(rpm) {
+      const rpmK = clamp(rpm / 1000, 0, 10);
+      const steps = 20;
+
+      state.rpmTicks.forEach((entry) => {
+        const { node, mark, isMajor } = entry;
+        const distance = Math.abs(rpmK - mark);
+        const edgeIntensity = Math.round(clamp(1 - distance / (isMajor ? 0.9 : 0.55), 0, 1) * steps) / steps;
+        const nearGlow = Math.round(clamp(1 - distance / (isMajor ? 1.35 : 0.85), 0, 1) * steps) / steps;
+        const isFilled = mark <= rpmK + 0.02;
+        const key = `${edgeIntensity}:${nearGlow}:${isFilled ? 1 : 0}`;
+        if (entry.key === key) return;
+        entry.key = key;
+
+        const alpha = isFilled
+          ? (isMajor ? 0.68 : 0.52) + edgeIntensity * (isMajor ? 0.28 : 0.26)
+          : (isMajor ? 0.16 : 0.11) + nearGlow * (isMajor ? 0.24 : 0.18);
+        const width = (isMajor ? 1.25 : 0.85) + edgeIntensity * (isMajor ? 0.9 : 0.55) + (isFilled ? (isMajor ? 0.2 : 0.12) : 0);
+
+        node.style.stroke = `rgba(255,255,255,${alpha.toFixed(2)})`;
+        node.style.strokeWidth = width.toFixed(2);
+        node.style.filter = edgeIntensity > 0.02
+          ? `drop-shadow(0 0 ${(3 + edgeIntensity * 7).toFixed(1)}px rgba(255,255,255,${(0.20 + edgeIntensity * 0.48).toFixed(2)}))`
+          : "none";
+      });
+    }
+
+    function updateTach(rpm, engineTemp = 90, now = performance.now()) {
+      const pct = clamp(rpm / 10000, 0, 1);
+      const active = $("rpmArcActive");
+      const boundary = $("rpmArcBoundary");
+      const hue = rpmHueFor(rpm / 1000);
+      const stroke = Math.round(42 + Math.pow(pct, 0.78) * 32);
+      const pathInset = (stroke - 44) / 2;
+      const activePath = rpmPathD(98 + pathInset, 98 + pathInset);
+      const stage = $("rpmStage");
+      const rpmLimit = rpmLimitForTemp(engineTemp);
+      const isLimited = isNum(rpmLimit) && rpm > rpmLimit;
+      const redzoneStart = rpmRedzoneStartForTemp(engineTemp);
+      if (state.redzoneStart !== redzoneStart) {
+        setRpmZone("rpmEngineRedzone", redzoneStart, 10000);
+        state.redzoneStart = redzoneStart;
+      }
+
+      if (state.activePathD !== activePath) {
+        let cachedPath = state.activePathCache.get(activePath);
+        active.setAttribute("d", activePath);
+        boundary.setAttribute("d", activePath);
+        if (!cachedPath) {
+          cachedPath = { length: active.getTotalLength() };
+          state.activePathCache.set(activePath, cachedPath);
+        }
+        state.activeLength = cachedPath.length;
+        boundary.style.strokeDasharray = state.activeLength;
+        active.style.strokeDasharray = state.activeLength;
+        state.activePathD = activePath;
+      }
+
+      const dashOffset = state.activeLength * (1 - pct);
+      boundary.style.strokeDashoffset = dashOffset;
+      active.style.strokeDashoffset = dashOffset;
+      const hueKey = hue.toFixed(1);
+      if (state.lastHue !== hueKey) {
+        stage.style.setProperty("--rpm-hue", hueKey);
+        state.lastHue = hueKey;
+      }
+      if (state.activeStroke !== stroke) {
+        stage.style.setProperty("--active-stroke", `${stroke}px`);
+        stage.style.setProperty("--boundary-stroke", `${stroke + 6}px`);
+        state.activeStroke = stroke;
+      }
+      stage.classList.toggle("rpm-alert", rpm >= 8500);
+      stage.classList.toggle("rpm-limited", isLimited);
+      if (now - state.lastDetailAt >= state.detailFrameMs || Math.abs(rpm - state.lastDetailRpm) > 900) {
+        updateRpmNumbers(rpm);
+        updateRpmTicks(rpm);
+        state.lastDetailAt = now;
+        state.lastDetailRpm = rpm;
+      }
+    }
+
+    function inferGear(speed) {
+      if (speed < 3) return "N";
+      if (speed < 23) return "1";
+      if (speed < 43) return "2";
+      if (speed < 68) return "3";
+      if (speed < 94) return "4";
+      if (speed < 125) return "5";
+      return "6";
+    }
+
+    function updateSpeedAndGear(speed, gear) {
+      const safeSpeed = clamp(isNum(speed) ? speed : 0, 0, 299);
+      const gearText = String(gear || "N").toUpperCase();
+      const gearNode = $("gearValue");
+      const speedText = String(Math.round(safeSpeed));
+
+      if (state.lastSpeedText !== speedText) {
+        $("speedValue").textContent = speedText;
+        state.lastSpeedText = speedText;
+      }
+      if (state.lastGearText !== gearText) {
+        gearNode.textContent = gearText;
+        gearNode.classList.toggle("neutral", gearText === "N");
+        state.lastGearText = gearText;
+      }
+    }
+
+    function mix(a, b, t) {
+      return Math.round(a + (b - a) * clamp(t, 0, 1));
+    }
+
+    function mixColor(from, to, t) {
+      return [
+        mix(from[0], to[0], t),
+        mix(from[1], to[1], t),
+        mix(from[2], to[2], t)
+      ];
+    }
+
+    function tempColorForTemp(temp) {
+      const blue = [40, 169, 255];
+      const green = [53, 227, 108];
+      const orange = [255, 154, 31];
+      const red = [255, 51, 45];
+      const stops = [
+        { temp: 60, color: blue },
+        { temp: 90, color: green },
+        { temp: 100, color: orange },
+        { temp: 120, color: red }
+      ];
+
+      if (temp <= stops[0].temp) return stops[0].color;
+      for (let i = 1; i < stops.length; i += 1) {
+        const from = stops[i - 1];
+        const to = stops[i];
+        if (temp <= to.temp) {
+          return mixColor(from.color, to.color, (temp - from.temp) / (to.temp - from.temp));
+        }
+      }
+      return red;
+    }
+
+    function updateEngineTemp(temp) {
+      const safeTemp = clamp(isNum(temp) ? temp : 75, 40, 140);
+      const pct = clamp((safeTemp - 60) / 60, 0, 1);
+      const [r, g, b] = tempColorForTemp(safeTemp);
+      const gauge = $("engineTempGauge");
+      const tempText = `${safeTemp.toFixed(1)} C`;
+
+      if (state.lastTempText !== tempText) {
+        $("engineTempValue").textContent = tempText;
+        state.lastTempText = tempText;
+      }
+      gauge.style.setProperty("--temp-pct", `${(pct * 100).toFixed(1)}%`);
+      gauge.style.setProperty("--temp-color", `rgb(${r},${g},${b})`);
+      gauge.style.setProperty("--temp-glow", `rgba(${r},${g},${b},0.42)`);
+    }
+
+    function renderTelemetry(t, now = performance.now()) {
+      const rpm = first(t, ["rpm"], 0);
+      const speed = first(t, ["speed_kph", "speed", "vehicle_speed"], 0);
+      const gear = firstText(t, ["gear", "gear_position", "gear_pos"], inferGear(speed));
+      const engineTemp = first(t, ["engine_temp_c", "coolant_c", "coolant", "engine_temp", "temp_c"], 75);
+      updateTach(rpm, engineTemp, now);
+      updateSpeedAndGear(speed, gear);
+      updateEngineTemp(engineTemp);
+    }
+
+    function renderPendingTelemetry(now) {
+      if (!state.pendingTelemetry) {
+        state.rafId = 0;
+        return;
+      }
+
+      if (now - state.lastRenderAt < state.frameMs) {
+        state.rafId = requestAnimationFrame(renderPendingTelemetry);
+        return;
+      }
+
+      const telemetry = state.pendingTelemetry;
+      state.pendingTelemetry = null;
+      state.lastRenderAt = now;
+      renderTelemetry(telemetry, now);
+
+      state.rafId = state.pendingTelemetry
+        ? requestAnimationFrame(renderPendingTelemetry)
+        : 0;
+    }
+
+    function applyTelemetry(t) {
+      state.pendingTelemetry = t;
+      if (!state.rafId) {
+        state.rafId = requestAnimationFrame(renderPendingTelemetry);
+      }
+    }
+
+    function triangleSweep(elapsed, period) {
+      const phase = (elapsed % period) / period;
+      const linear = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
+      const edgeBoost = 0.75;
+      return clamp(linear + edgeBoost * Math.sin(2 * Math.PI * linear) / (2 * Math.PI), 0, 1);
+    }
+
+    function demoTelemetry() {
+      const elapsed = (performance.now() - state.demoStart) / 1000;
+      state.seq += 1;
+      const sweep = triangleSweep(elapsed, 2.4);
+      const tempPhase = Math.floor(elapsed / 5) % 2;
+      const rpm = sweep * 10000;
+      const speed = sweep * 168;
+      const gear = inferGear(speed);
+      const engineTemp = tempPhase === 0 ? 70 : 80;
+      return {
+        seq: state.seq,
+        ts_ms: Math.round(elapsed * 1000),
+        source: state.sseConnected ? "simulator" : "demo",
+        rpm,
+        speed_kph: speed,
+        gear,
+        engine_temp_c: engineTemp
+      };
+    }
+
+    function connectSSE() {
+      if (location.protocol === "file:") return;
+      try {
+        const es = new EventSource("/events");
+        es.onopen = () => {
+          state.sseConnected = true;
+        };
+        es.onmessage = (event) => {
+          try { applyTelemetry(JSON.parse(event.data)); } catch (err) { console.warn(err); }
+        };
+        es.onerror = () => {
+          state.sseConnected = false;
+        };
+      } catch (err) {
+        console.warn(err);
+      }
+    }
+
+    function boot() {
+      state.lowPower = navigator.maxTouchPoints > 0 || /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      document.documentElement.classList.toggle("low-power", state.lowPower);
+      state.frameMs = state.lowPower ? 50 : 33;
+      state.detailFrameMs = state.lowPower ? 100 : 66;
+      buildRpmScale();
+      updateTach(0, 75, performance.now());
+      updateSpeedAndGear(0, "N");
+      updateEngineTemp(75);
+      connectSSE();
+
+      setInterval(() => {
+        if (!state.sseConnected) applyTelemetry(demoTelemetry());
+      }, state.frameMs);
+    }
+
+    document.addEventListener("DOMContentLoaded", boot);
+  </script>
+</body>
+</html>

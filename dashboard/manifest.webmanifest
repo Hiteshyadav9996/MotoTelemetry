@@ -1,0 +1,19 @@
+{
+  "name": "Dominar 400 TFT",
+  "short_name": "Dominar TFT",
+  "description": "Fullscreen Dominar 400 telemetry dashboard.",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#050608"/>
+  <path d="M82 342V226Q82 104 230 104h200" fill="none" stroke="#d99916" stroke-width="56" stroke-linecap="butt" stroke-linejoin="round"/>
+  <path d="M82 342V226Q82 104 230 104h200" fill="none" stroke="#ffffff" stroke-opacity=".72" stroke-width="64" stroke-linecap="butt" stroke-linejoin="round" stroke-dasharray="410 720"/>
+  <text x="268" y="330" fill="#f5f3ea" font-family="Arial Black, Arial, sans-serif" font-size="148" font-weight="900" text-anchor="middle">D</text>
+  <text x="323" y="382" fill="#d99916" font-family="Arial Black, Arial, sans-serif" font-size="58" font-weight="900" text-anchor="middle">400</text>
+</svg>
