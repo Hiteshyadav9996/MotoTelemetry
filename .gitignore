@@ -1,0 +1,53 @@
+# Secrets & credentials — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials.json
+**/secrets.*
+**/Secrets.xcconfig
+**/wifi_credentials.h
+!**/*.example
+!**/*.example.*
+!**/*.example.h
+!**/*.example.xcconfig
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# PlatformIO / firmware build
+**/.pio/
+**/.pio-core/
+
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/Flutter/Generated.xcconfig
+**/Flutter/flutter_export_environment.sh
+**/Flutter/ephemeral/
+**/Pods/
+**/DerivedData/
+*.xcuserstate
+**/xcuserdata/
