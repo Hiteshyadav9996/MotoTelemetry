@@ -40,6 +40,20 @@
       --temp-icon-size: 24px;
       --temp-bar-height: 18px;
       --temp-value-size: clamp(15px, 2vw, 22px);
+      --throttle-left: 178px;
+      --throttle-bottom: 34px;
+      --throttle-height: 168px;
+      --throttle-track-height: 106px;
+      --throttle-width: 10px;
+      --throttle-color: #47e6b1;
+      --throttle-glow: rgba(71,230,177,0.42);
+      --aux-left: calc(var(--throttle-left) + 62px);
+      --aux-bottom: var(--throttle-bottom);
+      --aux-width: 118px;
+      --aux-gap: 4px;
+      --aux-box-height: 25px;
+      --aux-label-size: clamp(7px, 0.95vw, 10px);
+      --aux-value-size: clamp(10px, 1.25vw, 13px);
       --shadow: rgba(0,0,0,0.58);
     }
 
@@ -189,6 +203,120 @@
       letter-spacing: 0.05em;
     }
 
+    .throttle-gauge {
+      --throttle-pct: 0%;
+      position: absolute;
+      left: var(--throttle-left);
+      bottom: var(--throttle-bottom);
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      height: var(--throttle-height);
+      width: 54px;
+      color: var(--throttle-color);
+      pointer-events: none;
+      transform: translateZ(0);
+    }
+
+    .throttle-icon {
+      width: 48px;
+      height: 28px;
+      flex: 0 0 28px;
+      color: rgba(245,243,234,0.92);
+      filter: drop-shadow(0 0 8px rgba(255,255,255,0.16));
+    }
+
+    .throttle-track {
+      position: relative;
+      width: var(--throttle-width);
+      height: var(--throttle-track-height);
+      flex: 0 0 var(--throttle-track-height);
+      overflow: hidden;
+      background: rgba(255,255,255,0.18);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    .throttle-track::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: var(--throttle-pct);
+      background: var(--throttle-color);
+      box-shadow: 0 0 12px var(--throttle-glow);
+      transition: height 90ms linear;
+    }
+
+    .throttle-value {
+      display: block;
+      width: 100%;
+      color: rgba(245,243,234,0.86);
+      font-size: clamp(12px, 1.55vw, 18px);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 10px var(--throttle-glow);
+    }
+
+    .aux-metrics {
+      position: absolute;
+      left: var(--aux-left);
+      bottom: var(--aux-bottom);
+      z-index: 28;
+      width: var(--aux-width);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--aux-gap);
+      color: rgba(245,243,234,0.86);
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+      transform: translateZ(0);
+    }
+
+    .metric-box {
+      height: var(--aux-box-height);
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 5px 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
+    }
+
+    .metric-label {
+      flex: 0 0 auto;
+      color: rgba(130,139,150,0.96);
+      font-size: var(--aux-label-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      min-width: 0;
+      color: rgba(245,243,234,0.92);
+      font-size: var(--aux-value-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .drive-readout {
       position: absolute;
       top: var(--readout-top);
@@ -244,6 +372,7 @@
       color: #f7f4ea;
       font-size: var(--speed-size);
       font-weight: 980;
+      font-style: italic;
       line-height: 0.78;
       letter-spacing: 0;
     }
@@ -424,6 +553,14 @@
         --temp-icon-size: 20px;
         --temp-bar-height: 14px;
         --temp-value-size: clamp(13px, 1.75vw, 18px);
+        --throttle-left: 160px;
+        --throttle-bottom: 28px;
+        --throttle-height: 150px;
+        --throttle-track-height: 88px;
+        --throttle-width: 9px;
+        --aux-width: 110px;
+        --aux-box-height: 24px;
+        --aux-gap: 5px;
       }
     }
 
@@ -436,6 +573,13 @@
         --temp-value-gap: 10px;
         --temp-bar-height: 12px;
         --temp-value-size: clamp(12px, 1.55vw, 16px);
+        --throttle-left: 150px;
+        --throttle-bottom: 24px;
+        --throttle-height: 140px;
+        --throttle-track-height: 78px;
+        --aux-width: 104px;
+        --aux-box-height: 22px;
+        --aux-gap: 4px;
       }
     }
 
@@ -499,6 +643,39 @@
       <div class="rpm-label">RPM <span>x1000</span></div>
     </section>
 
+    <section class="throttle-gauge" id="throttleGauge" aria-label="Throttle position">
+      <svg class="throttle-icon" viewBox="0 0 150 80" aria-hidden="true">
+        <path fill="currentColor" fill-rule="evenodd" d="M20 18a28 28 0 0 0 0 44h18a34 34 0 0 1 0-44H20Z" />
+        <path fill="currentColor" d="M40 27 86 33 82 61 39 54a14 14 0 0 1 1-27Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M91 17a34 34 0 0 0 0 46l35 5a39 39 0 0 1 0-56l-35 5Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M132 24a24 24 0 0 0 0 32h9a16 16 0 0 1 0-32h-9Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M141 16a24 24 0 1 0 0 48 24 24 0 0 0 0-48Zm0 17a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z" />
+        <path d="M86 28c7-25 37-25 45-2" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" />
+        <path d="m129 25 10-2-5 11" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <div class="throttle-track" aria-hidden="true"></div>
+      <span class="throttle-value" id="throttleValue">0%</span>
+    </section>
+
+    <section class="aux-metrics" aria-label="Secondary telemetry">
+      <div class="metric-box">
+        <span class="metric-label">MAP</span>
+        <strong class="metric-value" id="metricMap">--</strong>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">IAT</span>
+        <strong class="metric-value" id="metricIat">--</strong>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">BAT</span>
+        <strong class="metric-value" id="metricBattery">--</strong>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">TPS2</span>
+        <strong class="metric-value" id="metricTpsAbs">--</strong>
+      </div>
+    </section>
+
     <section class="drive-readout" aria-label="Speed and gear">
       <div class="gear-value" id="gearValue">N</div>
       <div class="speed-column">
@@ -546,6 +723,8 @@
       lastSpeedText: "",
       lastGearText: "",
       lastTempText: "",
+      lastThrottleText: "",
+      lastAuxMetricsKey: "",
       lowPower: false,
       frameMs: 33,
       detailFrameMs: 66,
@@ -893,14 +1072,51 @@
       gauge.style.setProperty("--temp-glow", `rgba(${r},${g},${b},0.42)`);
     }
 
+    function updateThrottle(throttle) {
+      const safeThrottle = clamp(isNum(throttle) ? throttle : 0, 0, 100);
+      const gauge = $("throttleGauge");
+      const throttleText = `${Math.round(safeThrottle)}%`;
+
+      if (state.lastThrottleText !== throttleText) {
+        $("throttleValue").textContent = throttleText;
+        state.lastThrottleText = throttleText;
+      }
+      gauge.style.setProperty("--throttle-pct", `${safeThrottle.toFixed(1)}%`);
+    }
+
+    function metricNumber(value, decimals, unit = "") {
+      if (!isNum(value)) return "--";
+      const formatted = decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
+      return unit ? `${formatted} ${unit}` : formatted;
+    }
+
+    function updateAuxMetrics(t) {
+      const rows = [
+        ["metricMap", metricNumber(first(t, ["map_kpa", "map"], null), 0, "kPa")],
+        ["metricIat", metricNumber(first(t, ["iat_c", "iat"], null), 1, "C")],
+        ["metricBattery", metricNumber(first(t, ["battery_v", "vbatt"], null), 2, "V")],
+        ["metricTpsAbs", metricNumber(first(t, ["tps_abs_pct", "tps_obd_equiv_pct", "tps_abs"], null), 1, "%")]
+      ];
+      const key = rows.map((row) => row[1]).join("|");
+      if (state.lastAuxMetricsKey === key) return;
+      state.lastAuxMetricsKey = key;
+      rows.forEach(([id, value]) => {
+        const node = $(id);
+        if (node) node.textContent = value;
+      });
+    }
+
     function renderTelemetry(t, now = performance.now()) {
       const rpm = first(t, ["rpm"], 0);
       const speed = first(t, ["speed_kph", "speed", "vehicle_speed"], 0);
       const gear = firstText(t, ["gear", "gear_position", "gear_pos"], inferGear(speed));
       const engineTemp = first(t, ["engine_temp_c", "coolant_c", "coolant", "engine_temp", "temp_c"], 75);
+      const throttle = first(t, ["tps_pct", "tps", "throttle_pct", "throttle"], 0);
       updateTach(rpm, engineTemp, now);
       updateSpeedAndGear(speed, gear);
       updateEngineTemp(engineTemp);
+      updateThrottle(throttle);
+      updateAuxMetrics(t);
     }
 
     function renderPendingTelemetry(now) {
@@ -922,6 +1138,45 @@
       state.rafId = state.pendingTelemetry
         ? requestAnimationFrame(renderPendingTelemetry)
         : 0;
+    }
+
+    function parseBinaryHex(hex) {
+      if (!hex || hex.length < 156) return null;
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i + 1 < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+      }
+      if (bytes[0] !== 0x44) return null;
+      const view = new DataView(bytes.buffer);
+      const f = (offset) => view.getFloat32(offset, true);
+      const gearChar = String.fromCharCode(bytes[16]);
+      return {
+        seq: view.getUint16(2, true),
+        ts_ms: view.getUint32(4, true),
+        source: "esp32-binary",
+        rpm: f(8),
+        speed_kph: f(12),
+        gear: gearChar.toUpperCase(),
+        odometer_km: f(18),
+        engine_temp_c: f(22),
+        coolant_c: f(22),
+        tps_pct: f(26),
+        tps: f(26),
+        throttle_pct: f(26),
+        map_kpa: f(30),
+        iat_c: f(34),
+        battery_v: f(38),
+        trip1_distance_km: f(42),
+        trip1_seconds: view.getUint32(46, true),
+        trip1_kmpl: f(50),
+        trip2_distance_km: f(54),
+        trip2_seconds: view.getUint32(58, true),
+        trip2_kmpl: f(62),
+        sse_skipped: view.getUint32(66, true),
+        sse_dropped: view.getUint32(70, true),
+        softap_stations: bytes[74],
+        link_quality_pct: 100
+      };
     }
 
     function applyTelemetry(t) {
@@ -947,6 +1202,8 @@
       const speed = sweep * 168;
       const gear = inferGear(speed);
       const engineTemp = tempPhase === 0 ? 70 : 80;
+      const throttlePhase = triangleSweep(elapsed + 0.8, 3.7);
+      const throttle = clamp(4 + Math.pow(throttlePhase, 1.6) * 92, 0, 100);
       return {
         seq: state.seq,
         ts_ms: Math.round(elapsed * 1000),
@@ -954,7 +1211,16 @@
         rpm,
         speed_kph: speed,
         gear,
-        engine_temp_c: engineTemp
+        engine_temp_c: engineTemp,
+        iat_c: 30.5 + Math.sin(elapsed * 0.45) * 2.0,
+        map_kpa: clamp(28 + throttle * 0.65 + rpm / 900, 20, 105),
+        battery_v: 14.1 + Math.sin(elapsed * 0.8) * 0.08,
+        tps_pct: throttle,
+        tps_abs_pct: clamp(10.6 + throttle * 0.894, 0, 100),
+        link_quality_pct: 100,
+        rx_frames: state.seq * 37,
+        tx_requests: state.sseConnected ? state.seq * 2 : 0,
+        pid_timeouts: 0
       };
     }
 
@@ -966,7 +1232,12 @@
           state.sseConnected = true;
         };
         es.onmessage = (event) => {
-          try { applyTelemetry(JSON.parse(event.data)); } catch (err) { console.warn(err); }
+          const raw = event.data;
+          if (typeof raw === "string" && raw.startsWith("binhex:")) {
+            const parsed = parseBinaryHex(raw.slice(7));
+            if (parsed) { applyTelemetry(parsed); return; }
+          }
+          try { applyTelemetry(JSON.parse(raw)); } catch (err) { console.warn(err); }
         };
         es.onerror = () => {
           state.sseConnected = false;
@@ -985,6 +1256,7 @@
       updateTach(0, 75, performance.now());
       updateSpeedAndGear(0, "N");
       updateEngineTemp(75);
+      updateThrottle(0);
       connectSSE();
 
       setInterval(() => {

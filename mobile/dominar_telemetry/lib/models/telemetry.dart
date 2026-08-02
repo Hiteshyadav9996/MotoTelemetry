@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 class Telemetry {
   Telemetry({
@@ -92,6 +93,50 @@ class Telemetry {
       softapStations: (json['softap_stations'] as num?)?.toInt(),
       connected: true,
       source: 'esp32',
+    );
+  }
+
+  /// Path C: hex-encoded packed binary (`binhex:` SSE prefix).
+  static Telemetry? fromBinaryHex(String hex) {
+    if (hex.length < 156) return null;
+    final bytes = <int>[];
+    for (var i = 0; i + 1 < hex.length; i += 2) {
+      bytes.add(int.parse(hex.substring(i, i + 2), radix: 16));
+    }
+    return fromBinary(Uint8List.fromList(bytes));
+  }
+
+  static Telemetry? fromBinary(Uint8List bytes) {
+    if (bytes.length < 78) return null;
+    final data = ByteData.sublistView(bytes);
+    if (data.getUint8(0) != 0x44) return null; // 'D'
+
+    double f(int offset) => data.getFloat32(offset, Endian.little);
+
+    final gearChar = String.fromCharCode(data.getUint8(16));
+    return Telemetry(
+      seq: data.getUint16(2, Endian.little),
+      ms: data.getUint32(4, Endian.little),
+      rpm: f(8),
+      speedKph: f(12),
+      gear: gearChar.toUpperCase(),
+      odometerKm: f(18),
+      engineTempC: f(22),
+      throttlePct: f(26),
+      mapKpa: f(30),
+      iatC: f(34),
+      batteryV: f(38),
+      trip1DistanceKm: f(42),
+      trip1Seconds: data.getUint32(46, Endian.little),
+      trip1Kmpl: f(50),
+      trip2DistanceKm: f(54),
+      trip2Seconds: data.getUint32(58, Endian.little),
+      trip2Kmpl: f(62),
+      sseSkipped: data.getUint32(66, Endian.little),
+      sseDropped: data.getUint32(70, Endian.little),
+      softapStations: data.getUint8(74),
+      connected: true,
+      source: 'esp32-binary',
     );
   }
 

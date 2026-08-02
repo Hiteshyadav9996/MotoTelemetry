@@ -9,8 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import '../models/telemetry.dart';
 import 'ride_link_logger.dart';
 
-/// Connects to the ESP32 passive-only bridge via Server-Sent Events (/events).
-/// Falls back to animated demo telemetry when the bridge is unreachable.
+/// Connects to the ESP32 ride-minimal bridge via binary SSE (`binhex:` on /events).
+/// Falls back to JSON SSE when connected to lab/legacy firmware.
 class TelemetryService extends ChangeNotifier {
   TelemetryService({RideLinkLogger? linkLogger})
       : _linkLogger = linkLogger ?? RideLinkLogger();
@@ -299,6 +299,28 @@ class TelemetryService extends ChangeNotifier {
     await connect();
   }
 
+  Future<Map<String, dynamic>?> fetchBenchStatus() async {
+    try {
+      final uri = Uri.parse('$_activeBridgeUrl/bench/status');
+      final res = await http.get(uri).timeout(connectTimeout);
+      if (res.statusCode != 200) return null;
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> fetchHealth() async {
+    try {
+      final uri = Uri.parse('$_activeBridgeUrl/health.json');
+      final res = await http.get(uri).timeout(connectTimeout);
+      if (res.statusCode != 200) return null;
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> startRideLog() async {
     await _linkLogger.startRideLog();
     _notifyImmediate();
@@ -407,26 +429,40 @@ class TelemetryService extends ChangeNotifier {
       if (!line.startsWith('data:')) continue;
       final payload = line.substring(5).trimLeft();
       if (payload.isEmpty) continue;
+
+      if (payload.startsWith('binhex:')) {
+        final parsed = Telemetry.fromBinaryHex(payload.substring(7));
+        if (parsed != null) {
+          _applyTelemetry(parsed);
+          continue;
+        }
+      }
+
+      // Lab / legacy firmware fallback (JSON SSE).
       try {
         final json = jsonDecode(payload) as Map<String, dynamic>;
-        _telemetry = Telemetry.fromJson(json);
-        if (_telemetry.sseSkipped != null) {
-          _lastSseSkipped = _telemetry.sseSkipped;
-        }
-        if (_telemetry.sseDropped != null) {
-          _lastSseDropped = _telemetry.sseDropped;
-        }
-        _recordArrival(_telemetry.ms);
-        if (_degraded) {
-          _degraded = false;
-          _refreshLiveStatus();
-          _logLink('degrade_exit');
-        }
-        _notifyTelemetryUi();
+        _applyTelemetry(Telemetry.fromJson(json));
       } catch (_) {
         // Ignore malformed packets.
       }
     }
+  }
+
+  void _applyTelemetry(Telemetry next) {
+    _telemetry = next;
+    if (_telemetry.sseSkipped != null) {
+      _lastSseSkipped = _telemetry.sseSkipped;
+    }
+    if (_telemetry.sseDropped != null) {
+      _lastSseDropped = _telemetry.sseDropped;
+    }
+    _recordArrival(_telemetry.ms);
+    if (_degraded) {
+      _degraded = false;
+      _refreshLiveStatus();
+      _logLink('degrade_exit');
+    }
+    _notifyTelemetryUi();
   }
 
   void _startDemo() {
