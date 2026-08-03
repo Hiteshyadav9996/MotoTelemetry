@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -37,6 +38,11 @@ class RideLinkLogger {
 
   Future<void> init() async {
     if (_ready) return;
+    if (kIsWeb) {
+      _ready = true;
+      _logging = false;
+      return;
+    }
     final override = _overrideDirectory;
     final Directory logDir;
     if (override != null) {
@@ -58,6 +64,7 @@ class RideLinkLogger {
   }
 
   Future<void> startRideLog() async {
+    if (kIsWeb) return;
     await init();
     final dir = _csvFile!.parent;
     final stamp = DateTime.now()
@@ -160,6 +167,7 @@ class RideLinkLogger {
   }
 
   Future<ShareResult?> shareLog() async {
+    if (kIsWeb) return null;
     await init();
     await _queue;
     final csv = _csvFile;
@@ -172,6 +180,7 @@ class RideLinkLogger {
   }
 
   Future<void> _append(Map<String, dynamic> row) async {
+    if (kIsWeb) return;
     await init();
     await _rotateIfNeeded();
     final csvLine = [

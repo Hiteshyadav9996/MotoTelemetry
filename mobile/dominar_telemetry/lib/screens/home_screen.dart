@@ -48,9 +48,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           Positioned(
-            top: 10,
-            right: 10,
+            top: 0,
+            right: 0,
             child: SafeArea(
+              left: false,
+              bottom: false,
+              minimum: const EdgeInsets.only(top: 2, right: 2),
               child: _LinkDotButton(
                 onOpenDetails: _showLinkDetails,
               ),
@@ -304,7 +307,7 @@ class _LinkDot extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.fromLTRB(8, 4, 0, 4),
         child: Container(
           width: 10,
           height: 10,
