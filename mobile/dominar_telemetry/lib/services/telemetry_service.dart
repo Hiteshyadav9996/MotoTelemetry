@@ -8,12 +8,14 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/telemetry.dart';
 import 'ride_link_logger.dart';
+import 'wifi_guard.dart';
 
 /// Connects to the ESP32 ride-minimal bridge via binary SSE (`binhex:` on /events).
 /// Falls back to JSON SSE when connected to lab/legacy firmware.
 class TelemetryService extends ChangeNotifier {
-  TelemetryService({RideLinkLogger? linkLogger})
-      : _linkLogger = linkLogger ?? RideLinkLogger();
+  TelemetryService({RideLinkLogger? linkLogger, WifiGuard? wifiGuard})
+      : _linkLogger = linkLogger ?? RideLinkLogger(),
+        _wifiGuard = wifiGuard ?? WifiGuard();
 
   static const defaultBridgeUrl = 'http://192.168.4.1';
   static const fallbackBridgeUrl = 'http://d400telemetry.local';
@@ -31,15 +33,17 @@ class TelemetryService extends ChangeNotifier {
   static const uiFrameMs = 50;
 
   /// Soft-warn: UI still shows last values but status turns amber.
-  static const staleDegradeMs = 1000;
+  static const staleDegradeMs = 1500;
 
   /// Hard cut: tear down the socket and reconnect instead of waiting on TCP.
-  static const staleReconnectMs = 2500;
+  static const staleReconnectMs = 5000;
 
-  static const connectTimeout = Duration(seconds: 2);
+  static const connectTimeout = Duration(seconds: 5);
 
   final RideLinkLogger _linkLogger;
   RideLinkLogger get linkLogger => _linkLogger;
+
+  final WifiGuard _wifiGuard;
 
   Telemetry _telemetry = Telemetry.demo(elapsed: 0, seq: 0);
   Telemetry get telemetry => _telemetry;
@@ -284,8 +288,28 @@ class TelemetryService extends ChangeNotifier {
       _bridgeUrl = saved;
     }
     await _linkLogger.init();
+    _wifiGuard.onSsidDrift = _handleWifiDrift;
+    await _wifiGuard.pinSoftAp();
+    _wifiGuard.startWatching(shouldWatch: () => !_disposed);
     _startWatchdog();
     await connect();
+  }
+
+  void _handleWifiDrift(String foreignSsid) {
+    _logLink('wifi_drift');
+    if (_connected) {
+      _status = 'Wrong Wi‑Fi · $foreignSsid · re-pinning ${WifiGuard.softApSsid}';
+      _notifyImmediate();
+    }
+    unawaited(_recoverAfterWifiDrift());
+  }
+
+  Future<void> _recoverAfterWifiDrift() async {
+    await _wifiGuard.pinSoftAp();
+    if (_disposed) return;
+    if (_connected) {
+      unawaited(connect());
+    }
   }
 
   Future<void> setBridgeUrl(String url) async {
@@ -344,6 +368,7 @@ class TelemetryService extends ChangeNotifier {
     if (_disposed) return;
     if (_connecting) return;
     _connecting = true;
+    var scheduleReconnect = false;
     try {
       await _disconnectSse();
       _logLink('connect_attempt');
@@ -361,9 +386,12 @@ class TelemetryService extends ChangeNotifier {
       _notifyImmediate();
       _logLink('demo_fallback');
       _startDemo();
-      _scheduleReconnect();
+      scheduleReconnect = true;
     } finally {
       _connecting = false;
+      if (scheduleReconnect && !_disposed) {
+        _scheduleReconnect();
+      }
     }
   }
 
@@ -386,6 +414,9 @@ class TelemetryService extends ChangeNotifier {
       _activeBridgeUrl = baseUrl;
       _connected = true;
       _degraded = false;
+      // Fresh SSE socket — don't inherit stale packet age from the prior session.
+      _lastArrivalMs = null;
+      _lastDeviceMs = null;
       _refreshLiveStatus();
       _stopDemo();
       _notifyImmediate();
@@ -455,6 +486,10 @@ class TelemetryService extends ChangeNotifier {
     }
     if (_telemetry.sseDropped != null) {
       _lastSseDropped = _telemetry.sseDropped;
+    }
+    final stations = _telemetry.softapStations;
+    if (stations != null && stations > 1) {
+      _logLink('softap_shared');
     }
     _recordArrival(_telemetry.ms);
     if (_degraded) {
@@ -537,6 +572,9 @@ class TelemetryService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _wifiGuard.onSsidDrift = null;
+    _wifiGuard.stopWatching();
+    unawaited(_wifiGuard.dispose());
     _stopDemo();
     _stopWatchdog();
     _uiCoalesceTimer?.cancel();

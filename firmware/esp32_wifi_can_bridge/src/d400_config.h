@@ -7,6 +7,9 @@
 static const char* D400_AP_SSID = "D400Telemetry";
 static const char* D400_AP_PASS = "dominar400";
 static const char* D400_MDNS_HOSTNAME = "d400telemetry";
+static const int D400_AP_CHANNEL = 1;
+// One phone only — a second station steals airtime and breaks SSE throughput.
+static const int D400_AP_MAX_CONNECTIONS = 1;
 
 static const int D400_SPI_SCK_PIN = 12;
 static const int D400_SPI_MISO_PIN = 13;
