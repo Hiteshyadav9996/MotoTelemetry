@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/telemetry.dart';
+import '../services/navigation_session_service.dart';
 import '../services/telemetry_service.dart';
 import '../theme/dashboard_theme.dart';
 import '../widgets/full/full_dashboard.dart';
@@ -16,16 +19,26 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final PageController _pageController;
+  int _pageIndex = 0;
+  StreamSubscription<NavigationSessionState>? _navSub;
+  NavigationSessionState _navState = NavigationSessionState.uninitialized;
 
   @override
   void initState() {
     super.initState();
     final initialPage = Uri.base.queryParameters['page'] == 'nav' ? 1 : 0;
+    _pageIndex = initialPage;
     _pageController = PageController(initialPage: initialPage);
+    _navState = NavigationSessionService().state;
+    _navSub = NavigationSessionService().stateChanges.listen((state) {
+      if (!mounted) return;
+      setState(() => _navState = state);
+    });
   }
 
   @override
   void dispose() {
+    _navSub?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -34,6 +47,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     // Do not watch telemetry here — that rebuilt Google Maps + both pages
     // at 20 Hz and caused UI jank while packets still arrived on time.
+    final hideLinkDot = _pageIndex == 1 &&
+        (_navState == NavigationSessionState.routeReady ||
+            _navState == NavigationSessionState.navigating);
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: DashboardTheme.bg,
@@ -42,23 +59,25 @@ class _HomeScreenState extends State<HomeScreen> {
           PageView(
             controller: _pageController,
             allowImplicitScrolling: false,
+            onPageChanged: (index) => setState(() => _pageIndex = index),
             children: const [
               _FullDashboardPage(),
               SplitNavigationView(),
             ],
           ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: SafeArea(
-              left: false,
-              bottom: false,
-              minimum: const EdgeInsets.only(top: 2, right: 2),
-              child: _LinkDotButton(
-                onOpenDetails: _showLinkDetails,
+          if (!hideLinkDot)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                left: false,
+                bottom: false,
+                minimum: const EdgeInsets.only(top: 2, right: 2),
+                child: _LinkDotButton(
+                  onOpenDetails: _showLinkDetails,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -330,14 +349,25 @@ class _LinkDot extends StatelessWidget {
 }
 
 /// Three-column navigation dashboard: RPM tumbler, map, speed/gear/trip.
-class SplitNavigationView extends StatelessWidget {
+class SplitNavigationView extends StatefulWidget {
   const SplitNavigationView({super.key});
+
+  @override
+  State<SplitNavigationView> createState() => _SplitNavigationViewState();
+}
+
+class _SplitNavigationViewState extends State<SplitNavigationView> {
+  bool _fullscreenNav = false;
 
   @override
   Widget build(BuildContext context) {
     return Selector<TelemetryService, Telemetry>(
       selector: (_, service) => service.telemetry,
-      builder: (_, telemetry, __) => NavDashboardView(telemetry: telemetry),
+      builder: (_, telemetry, __) => NavDashboardView(
+        telemetry: telemetry,
+        fullscreenNav: _fullscreenNav,
+        onToggleFullscreen: (value) => setState(() => _fullscreenNav = value),
+      ),
     );
   }
 }

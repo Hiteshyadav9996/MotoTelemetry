@@ -3,13 +3,16 @@
 Native iPhone app that replaces the browser dashboard. Connects to your ESP32 passive-only bridge over Wi-Fi and provides two swipeable landscape views:
 
 1. **Full** — complete dashboard (RPM arc, speed, gear, throttle, trip, aux metrics) matching `firmware/esp32_wifi_can_bridge/data/index.html`
-2. **Nav** — left half compact cluster (vertical RPM bar, speed, gear, trip/odo swipe) + right half Google Maps
+2. **Nav** — three-column layout: vertical RPM bar | Google Navigation map | speed/gear/trip readout
+
+Navigation uses Google's **Navigation SDK** with built-in turn-by-turn UI (same engine as Google Maps mobile), motorbike routing, voice guidance, lane guidance, and traffic-aware rerouting.
 
 ## Prerequisites
 
 - Flutter SDK 3.2+ ([install guide](https://docs.flutter.dev/get-started/install))
-- Xcode (for iPhone XR builds)
-- Google Maps API key with **Maps SDK for iOS** enabled
+- Xcode (for iPhone builds)
+- iOS 16.0+ on device
+- Google Maps API key with **Navigation SDK for iOS** enabled
 
 ## First-time setup
 
@@ -27,21 +30,20 @@ cd mobile/dominar_telemetry
 flutter pub get
 ```
 
-**Status:** platform folders generated, iOS permissions patched, Google Maps configuration wired, code compiles and tests pass.
+**Status:** platform folders generated, iOS permissions patched, Google Navigation SDK wired, code compiles and tests pass.
 
-### Google Maps API key
+### Google Maps / Navigation API key
 
 1. Create a key in [Google Cloud Console](https://console.cloud.google.com/)
 2. Enable these APIs (APIs & Services → Library):
+   - **Navigation SDK for iOS** (turn-by-turn navigation — required)
    - **Maps SDK for iOS** (map tiles)
    - **Places API** (destination search suggestions)
-   - **Routes API** (motorbike / two-wheeler route line)
-   - **Directions API** (fallback car route)
-   - **Geocoding API** (fallback address lookup)
+   - **Geocoding API** (address lookup fallback)
 3. Under Credentials → your key → **API restrictions**, allow the four APIs above.
-   For search/routing HTTP calls from the app, set **Application restrictions** to
+   For search HTTP calls from the app, set **Application restrictions** to
    **None** (or create a second key with API-only restrictions). An iOS-bundle-only
-   key works for map tiles but often blocks Places/Directions REST calls.
+   key works for map tiles but often blocks Places REST calls.
 4. Copy the local secrets template:
 
 ```bash
@@ -57,9 +59,30 @@ GOOGLE_MAPS_API_KEY=AIza_YOUR_REAL_IOS_KEY
 6. Delete the app from the iPhone, then run `flutter clean`,
    `flutter pub get`, and `flutter run` so the native key is embedded again.
 
+### Troubleshooting route calculation
+
+**Yellow circle on the map** — GPS is still acquiring a fix. Go outdoors; wait for a solid blue dot before searching for a route.
+
+**"Network error while calculating route"** — common causes:
+
+1. **No internet while on bike Wi‑Fi** — `D400Telemetry` has no internet. Route calculation needs cellular (or home Wi‑Fi). Turn on **Settings → Cellular → Cellular Data** and allow data for Dominar Telemetry. Test navigation on home Wi‑Fi or LTE *before* joining the bike AP.
+2. **Billing not linked** — Navigation SDK requires a billing account on the Google Cloud project (free tier still needs a card on file).
+3. **Wrong API key restriction** — For the native map + routing key, set **Application restrictions → iOS apps** with bundle ID `com.hitesh.dominarTelemetry`. Under **API restrictions**, allow only:
+   - Navigation SDK
+   - Maps SDK for iOS
+   - Places API
+   - Geocoding API  
+   You do **not** need Directions API or Routes API for the Navigation SDK (those are REST-only).
+4. **Key not in the app** — Confirm `ios/Flutter/Secrets.xcconfig` exists with a real `GOOGLE_MAPS_API_KEY=AIza...` (not the example placeholder).
+
+Check denied requests: Google Cloud Console → **APIs & Services → Metrics** (filter Navigation SDK / Maps SDK for iOS).
+
+**First navigation use:** The app shows Google's Navigation Terms & Conditions dialog. You must accept once before turn-by-turn guidance works.
+
 On the **Nav** page (swipe from full dashboard): use the **Search destination…**
-bar on the map, pick a place, and a **motorbike route** (Google `TWO_WHEELER` mode) is drawn.
-Tap the target button (bottom-right) to recenter on your position.
+bar, pick a place, tap **Start**, and Google Navigation takes over with built-in
+motorbike routing (`TWO_WHEELER` mode), voice prompts, and traffic rerouting.
+Tap the fullscreen button during navigation for a Google Maps–style full-width view.
 
 ### Connect to the bike
 
@@ -69,7 +92,7 @@ Tap the target button (bottom-right) to recenter on your position.
 
 Telemetry streams via **Server-Sent Events** from `/events` — same protocol as the web dashboard.
 
-## Run on iPhone XR
+## Run on iPhone
 
 Requires **Xcode** (App Store) and **CocoaPods**:
 
@@ -94,9 +117,10 @@ ESP32 (passive-only)          Flutter app
 ─────────────────────         ─────────────────────────────
 CAN bus → decode              TelemetryService (SSE /events)
        → /events SSE    ───►  ├─ FullDashboard (Page 0)
-       → /telemetry.json       └─ SplitNavigationView (Page 1)
-                                    ├─ CompactDashboard (50%)
-                                    └─ GoogleMap (50%)
+       → /telemetry.json       └─ NavDashboardView (Page 1)
+                                    ├─ RpmVerticalBar
+                                    ├─ GoogleMapsNavigationView (Navigation SDK)
+                                    └─ NavDriveReadout
 ```
 
 ## Demo mode
