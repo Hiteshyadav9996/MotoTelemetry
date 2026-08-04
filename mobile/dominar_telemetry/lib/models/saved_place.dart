@@ -1,4 +1,4 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_navigation_flutter/google_navigation_flutter.dart';
 
 enum SavedPlaceSlot { home, work }
 
@@ -15,7 +15,7 @@ class SavedPlace {
   final double latitude;
   final double longitude;
 
-  LatLng get location => LatLng(latitude, longitude);
+  LatLng get location => LatLng(latitude: latitude, longitude: longitude);
 
   Map<String, dynamic> toJson() => {
         'placeId': placeId,

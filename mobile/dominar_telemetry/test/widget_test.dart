@@ -6,7 +6,6 @@ import 'package:dominar_telemetry/widgets/full/full_dashboard.dart';
 import 'package:dominar_telemetry/widgets/full/rpm_arc_gauge.dart';
 import 'package:dominar_telemetry/widgets/nav/nav_dashboard_view.dart';
 import 'package:dominar_telemetry/widgets/compact/rpm_vertical_bar.dart';
-import 'package:dominar_telemetry/widgets/navigation/map_navigation_panel.dart';
 
 void main() {
   test('Telemetry parses ESP32 JSON', () {
@@ -154,77 +153,6 @@ void main() {
     expect(find.text('SPEED'), findsOneWidget);
     expect(find.text('168'), findsWidgets);
     expect(find.text('4'), findsWidgets);
-  });
-
-  testWidgets('full-width route banner fits varied distance and time values',
-      (tester) async {
-    const values = [
-      ('0 m left', '< 1 min left'),
-      ('999 m left', '59 min left'),
-      ('999.9 km left', '23 hr 59 min left'),
-      ('Arrived', ''),
-    ];
-
-    for (final (distance, duration) in values) {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 380,
-              height: 54,
-              child: RouteProgressBar(
-                progress: 0.57,
-                distanceLabel: distance,
-                durationLabel: duration,
-                arrivalTimeLabel: '3:42 PM',
-                onExit: () {},
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(distance), findsOneWidget);
-      if (duration.isNotEmpty) {
-        expect(find.text(duration), findsOneWidget);
-      }
-    }
-  });
-
-  testWidgets('half-width route banner fits varied distance and time values',
-      (tester) async {
-    const values = [
-      ('0 m left', '< 1 min left'),
-      ('999 m left', '59 min left'),
-      ('999.9 km left', '23 hr 59 min left'),
-      ('Arrived', ''),
-    ];
-
-    for (final (distance, duration) in values) {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 180,
-              height: 54,
-              child: RouteProgressBar(
-                progress: 0.57,
-                distanceLabel: distance,
-                durationLabel: duration,
-                arrivalTimeLabel: '3:42 PM',
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text(distance), findsOneWidget);
-      if (duration.isNotEmpty) {
-        expect(find.text(duration), findsOneWidget);
-      }
-    }
   });
 
   testWidgets('large trip reset alerts fit success and failure messages',

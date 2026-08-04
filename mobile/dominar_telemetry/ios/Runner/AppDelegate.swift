@@ -1,7 +1,8 @@
 import Flutter
+import GoogleMaps
+import GoogleNavigation
 import Network
 import UIKit
-import GoogleMaps
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -25,6 +26,11 @@ import GoogleMaps
        isValidMapsApiKey(apiKey) {
       GMSServices.provideAPIKey(apiKey)
       mapsConfigured = true
+      NSLog(
+        "Dominar Maps: key loaded, Navigation SDK %@, terms accepted=%@",
+        GMSNavigationServices.navSDKVersion(),
+        GMSNavigationServices.areTermsAndConditionsAccepted() ? "yes" : "no"
+      )
     } else {
       NSLog(
         "Google Maps is disabled: add GOOGLE_MAPS_API_KEY to "
@@ -51,6 +57,20 @@ import GoogleMaps
           } else {
             result(nil)
           }
+        case "getNavigationDiagnostics":
+          let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+          let key = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String
+          var keyHint = "missing"
+          if let key = key, key.count >= 12 {
+            keyHint = String(key.prefix(8)) + "…" + String(key.suffix(4))
+          }
+          result([
+            "bundleId": bundleId,
+            "mapsConfigured": self?.mapsConfigured ?? false,
+            "apiKeyHint": keyHint,
+            "navigationTermsAccepted": GMSNavigationServices.areTermsAndConditionsAccepted(),
+            "navigationSdkVersion": GMSNavigationServices.navSDKVersion(),
+          ])
         default:
           result(FlutterMethodNotImplemented)
         }
