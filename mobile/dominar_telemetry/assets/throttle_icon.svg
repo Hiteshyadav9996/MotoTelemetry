@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 80">
+  <path fill="currentColor" fill-rule="evenodd" d="M20 18a28 28 0 0 0 0 44h18a34 34 0 0 1 0-44H20Z"/>
+  <path fill="currentColor" d="M40 27 86 33 82 61 39 54a14 14 0 0 1 1-27Z"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M91 17a34 34 0 0 0 0 46l35 5a39 39 0 0 1 0-56l-35 5Z"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M132 24a24 24 0 0 0 0 32h9a16 16 0 0 1 0-32h-9Z"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M141 16a24 24 0 1 0 0 48 24 24 0 0 0 0-48Zm0 17a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z"/>
+  <path d="M86 28c7-25 37-25 45-2" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+  <path d="m129 25 10-2-5 11" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

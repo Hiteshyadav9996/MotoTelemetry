@@ -9,6 +9,7 @@ The browser dashboard is intentionally more complete than the first ECU prototyp
 | RPM arc | `rpm` | OBD PID 01 0C or broadcast CAN | High |
 | Speed | `speed_kph` or `speed` | OBD PID 01 0D, ABS/cluster CAN, or GPS fallback | High |
 | Gear | `gear` | Gear sensor/CAN if available, otherwise calculate from speed and RPM | Medium |
+| Odometer | `odometer_km` | Integrated from decoded speed and persisted in ESP32 NVS | Medium |
 | Fuel bars | `fuel_pct` | Cluster/CAN if available, otherwise phone/app estimate | Medium |
 | Ambient temp | `ambient_c` | Phone/weather sensor, cluster CAN, or manual setting | Low |
 | MIL | `mil_on` | OBD monitor/MIL status or DTC scan | High |

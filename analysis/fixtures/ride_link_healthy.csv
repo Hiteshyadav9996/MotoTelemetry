@@ -1,4 +1,0 @@
-wall_iso,event,device_ms,arrival_gap_ms,device_gap_ms,packet_age_ms,status,bridge_url,sse_skipped,sse_dropped,softap_stations,connected,degraded,burst_packets,packets_received
-2026-08-02T06:00:00Z,connect,1000,,,,,Live · http://192.168.4.1,http://192.168.4.1,0,0,1,1,0,0,1
-2026-08-02T06:00:01Z,arrival_gap,1100,180,50,60,Live · http://192.168.4.1,http://192.168.4.1,0,0,1,1,0,0,20
-2026-08-02T06:00:02Z,arrival_gap,1200,200,50,80,Live · http://192.168.4.1,http://192.168.4.1,2,0,1,1,0,0,40

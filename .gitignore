@@ -28,6 +28,11 @@ Thumbs.db
 *.swo
 *~
 
+# Analysis artifacts / data dumps
+analysis/
+*.csv
+**/*_capture.txt
+
 # Python
 __pycache__/
 *.py[cod]

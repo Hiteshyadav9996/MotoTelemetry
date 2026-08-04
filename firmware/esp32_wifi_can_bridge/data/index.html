@@ -27,19 +27,45 @@
       --boundary-stroke: 48px;
       --edge-gap: 76px;
       --ui-right: max(42px, calc(env(safe-area-inset-right, 0px) + 22px));
+      --readout-right: max(22px, calc(env(safe-area-inset-right, 0px) + 14px));
       --readout-top: 188px;
-      --readout-gap: 54px;
-      --gear-width: 76px;
-      --gear-size: clamp(54px, 9vw, 86px);
-      --gear-top: 24px;
-      --speed-column-width: clamp(270px, 36vw, 340px);
-      --speed-size: clamp(92px, 15vw, 142px);
-      --speed-unit-size: clamp(12px, 1.7vw, 18px);
+      --readout-gap: 18px;
+      --gear-width: 64px;
+      --gear-size: clamp(42px, 6.8vw, 64px);
+      --gear-top: 0px;
+      --speed-column-width: clamp(220px, 28vw, 250px);
+      --speed-size: clamp(78px, 12vw, 112px);
+      --speed-unit-size: clamp(10px, 1.45vw, 15px);
       --temp-top-gap: 34px;
       --temp-value-gap: 12px;
       --temp-icon-size: 24px;
       --temp-bar-height: 18px;
       --temp-value-size: clamp(15px, 2vw, 22px);
+      --odometer-size: clamp(10px, 1.25vw, 14px);
+      --throttle-left: 178px;
+      --throttle-bottom: 34px;
+      --throttle-height: 168px;
+      --throttle-track-height: 106px;
+      --throttle-width: 10px;
+      --throttle-color: #47e6b1;
+      --throttle-glow: rgba(71,230,177,0.42);
+      --aux-left: calc(var(--throttle-left) + 62px);
+      --aux-bottom: var(--throttle-bottom);
+      --aux-width: 132px;
+      --aux-gap: 6px;
+      --aux-box-height: 34px;
+      --aux-label-size: clamp(8px, 1vw, 11px);
+      --aux-value-size: clamp(15px, 1.9vw, 20px);
+      --trip-left: calc(var(--aux-left) + var(--aux-width) + 10px);
+      --trip-bottom: var(--aux-bottom);
+      --trip-width: 200px;
+      --trip-height: 96px;
+      --trip-clearance: 16px;
+      --trip-id-width: 44px;
+      --trip-title-size: clamp(8px, 0.95vw, 11px);
+      --trip-number-size: clamp(24px, 2.7vw, 32px);
+      --trip-distance-size: clamp(18px, 2vw, 23px);
+      --trip-detail-size: clamp(11px, 1.25vw, 14px);
       --shadow: rgba(0,0,0,0.58);
     }
 
@@ -189,10 +215,250 @@
       letter-spacing: 0.05em;
     }
 
+    .throttle-gauge {
+      --throttle-pct: 0%;
+      position: absolute;
+      left: var(--throttle-left);
+      bottom: var(--throttle-bottom);
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      height: var(--throttle-height);
+      width: 54px;
+      color: var(--throttle-color);
+      pointer-events: none;
+      transform: translateZ(0);
+    }
+
+    .throttle-icon {
+      width: 48px;
+      height: 28px;
+      flex: 0 0 28px;
+      color: rgba(245,243,234,0.92);
+      filter: drop-shadow(0 0 8px rgba(255,255,255,0.16));
+    }
+
+    .throttle-track {
+      position: relative;
+      width: var(--throttle-width);
+      height: var(--throttle-track-height);
+      flex: 0 0 var(--throttle-track-height);
+      overflow: hidden;
+      background: rgba(255,255,255,0.18);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    .throttle-track::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: var(--throttle-pct);
+      background: var(--throttle-color);
+      box-shadow: 0 0 12px var(--throttle-glow);
+      transition: height 90ms linear;
+    }
+
+    .throttle-value {
+      display: block;
+      width: 100%;
+      color: rgba(245,243,234,0.86);
+      font-size: clamp(12px, 1.55vw, 18px);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 10px var(--throttle-glow);
+    }
+
+    .aux-metrics {
+      position: absolute;
+      left: var(--aux-left);
+      bottom: var(--aux-bottom);
+      z-index: 28;
+      width: var(--aux-width);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--aux-gap);
+      color: rgba(245,243,234,0.86);
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+      transform: translateZ(0);
+    }
+
+    .metric-box {
+      height: var(--aux-box-height);
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 9px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
+    }
+
+    .metric-label {
+      flex: 0 0 auto;
+      color: rgba(130,139,150,0.96);
+      font-size: var(--aux-label-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      min-width: 0;
+      color: rgba(245,243,234,0.92);
+      font-size: var(--aux-value-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trip-card {
+      position: absolute;
+      left: var(--trip-left);
+      bottom: var(--trip-bottom);
+      z-index: 32;
+      width: min(var(--trip-width), calc(100% - var(--trip-left) - var(--readout-right) - var(--speed-column-width) - var(--trip-clearance)));
+      height: var(--trip-height);
+      display: grid;
+      grid-template-columns: var(--trip-id-width) minmax(0, 1fr);
+      align-items: center;
+      column-gap: 10px;
+      padding: 7px 10px;
+      overflow: hidden;
+      color: #f7f4ea;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2), 0 0 18px rgba(0,0,0,0.18);
+      font-variant-numeric: tabular-nums;
+      pointer-events: auto;
+      touch-action: pan-y;
+      user-select: none;
+      cursor: pointer;
+      transform: translateZ(0);
+    }
+
+    .trip-word {
+      color: rgba(130,139,150,0.98);
+      font-size: var(--trip-title-size);
+      font-weight: 920;
+      line-height: 1;
+      letter-spacing: 0.12em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .trip-identity {
+      min-width: 0;
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      gap: 8px;
+    }
+
+    .trip-number {
+      color: #f7f4ea;
+      font-size: var(--trip-number-size);
+      font-style: italic;
+      font-weight: 960;
+      line-height: 0.76;
+      letter-spacing: 0;
+      text-align: center;
+      text-shadow: 0 0 12px rgba(255,255,255,0.18);
+    }
+
+    .trip-readings {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto auto;
+      align-content: center;
+      gap: 8px;
+    }
+
+    .trip-distance {
+      min-width: 0;
+      min-height: calc(var(--trip-distance-size) * 1.18);
+      color: #f7f4ea;
+      font-size: var(--trip-distance-size);
+      font-style: italic;
+      font-weight: 940;
+      line-height: 1.18;
+      letter-spacing: 0;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 0 12px rgba(255,255,255,0.18);
+    }
+
+    .trip-time,
+    .trip-economy {
+      color: rgba(245,243,234,0.82);
+      font-size: var(--trip-detail-size);
+      font-style: italic;
+      font-weight: 820;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .trip-reset-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 80;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      pointer-events: none;
+      background: rgba(5,6,8,0.5);
+      backdrop-filter: blur(7px);
+      transition: opacity 140ms ease;
+    }
+
+    .trip-reset-overlay.show {
+      opacity: 1;
+    }
+
+    .trip-reset-message {
+      max-width: 82%;
+      padding: 22px 30px;
+      color: #f7f4ea;
+      background: rgba(10,14,19,0.9);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 8px;
+      box-shadow: 0 18px 48px rgba(0,0,0,0.44), inset 0 0 0 1px rgba(255,255,255,0.045);
+      font-size: clamp(22px, 4vw, 38px);
+      font-weight: 950;
+      line-height: 1.05;
+      letter-spacing: 0;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
     .drive-readout {
       position: absolute;
       top: var(--readout-top);
-      right: var(--ui-right);
+      right: var(--readout-right);
       z-index: 6;
       display: flex;
       align-items: flex-start;
@@ -205,19 +471,32 @@
 
     .gear-value {
       width: var(--gear-width);
+      height: calc(var(--gear-size) * 0.94);
+      display: grid;
+      place-items: center;
       text-align: center;
       color: rgba(245,243,234,0.78);
       font-size: var(--gear-size);
       font-weight: 950;
-      line-height: 0.82;
+      line-height: 1;
       letter-spacing: 0;
-      margin-top: var(--gear-top);
       transition: color 90ms linear, text-shadow 90ms linear;
     }
 
     .gear-value.neutral {
       color: #47e878;
       text-shadow: 0 0 18px rgba(71,232,120,0.42);
+    }
+
+    .gear-column {
+      width: var(--gear-width);
+      padding-top: var(--gear-top);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      flex: 0 0 var(--gear-width);
+      align-self: flex-start;
     }
 
     .speed-column {
@@ -231,7 +510,7 @@
       display: flex;
       align-items: baseline;
       justify-content: flex-end;
-      gap: 14px;
+      gap: 10px;
       text-align: right;
       white-space: nowrap;
       width: 100%;
@@ -244,6 +523,7 @@
       color: #f7f4ea;
       font-size: var(--speed-size);
       font-weight: 980;
+      font-style: italic;
       line-height: 0.78;
       letter-spacing: 0;
     }
@@ -281,19 +561,39 @@
       stroke-width: 2.2;
     }
 
-    .temp-value {
-      display: block;
+    .temp-readings {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 32px;
       width: calc(100% - 34px);
       margin-top: var(--temp-value-gap);
       margin-left: 34px;
+      white-space: nowrap;
+    }
+
+    .temp-value {
+      display: block;
       color: var(--temp-color);
       font-size: var(--temp-value-size);
       font-weight: 920;
       line-height: 1;
       letter-spacing: 0;
-      text-align: center;
+      text-align: right;
       text-shadow: 0 0 12px var(--temp-glow);
       transition: color 120ms linear, text-shadow 120ms linear;
+    }
+
+    .odometer-value {
+      color: #f7f4ea;
+      font-size: var(--odometer-size);
+      font-style: italic;
+      font-weight: 820;
+      line-height: 1;
+      letter-spacing: 0;
+      text-align: right;
+      white-space: nowrap;
+      text-shadow: 0 0 10px rgba(255,255,255,0.16);
     }
 
     .temp-bar {
@@ -411,31 +711,77 @@
     @media (max-width: 840px) and (orientation: landscape) {
       :root {
         --ui-right: max(26px, calc(env(safe-area-inset-right, 0px) + 16px));
+        --readout-right: max(18px, calc(env(safe-area-inset-right, 0px) + 10px));
         --readout-top: 172px;
-        --readout-gap: 34px;
-        --gear-width: 58px;
-        --gear-size: clamp(44px, 8vw, 68px);
-        --gear-top: 20px;
-        --speed-column-width: clamp(238px, 35vw, 284px);
-        --speed-size: clamp(82px, 14vw, 116px);
-        --speed-unit-size: clamp(10px, 1.45vw, 14px);
+        --readout-gap: 14px;
+        --gear-width: 52px;
+        --gear-size: clamp(36px, 6.4vw, 52px);
+        --gear-top: 0px;
+        --speed-column-width: clamp(192px, 27vw, 224px);
+        --speed-size: clamp(72px, 11.5vw, 104px);
+        --speed-unit-size: clamp(9px, 1.3vw, 13px);
         --temp-top-gap: 30px;
         --temp-value-gap: 12px;
         --temp-icon-size: 20px;
         --temp-bar-height: 14px;
         --temp-value-size: clamp(13px, 1.75vw, 18px);
+        --odometer-size: clamp(9px, 1.2vw, 12px);
+        --throttle-left: 160px;
+        --throttle-bottom: 28px;
+        --throttle-height: 150px;
+        --throttle-track-height: 88px;
+        --throttle-width: 9px;
+        --aux-width: 124px;
+        --aux-box-height: 32px;
+        --aux-gap: 6px;
+        --aux-label-size: clamp(7px, 0.9vw, 10px);
+        --aux-value-size: clamp(13px, 1.6vw, 17px);
+        --trip-left: calc(var(--aux-left) + var(--aux-width) + 8px);
+        --trip-width: 170px;
+        --trip-height: 94px;
+        --trip-clearance: 14px;
+        --trip-id-width: 40px;
+        --trip-title-size: clamp(6px, 0.8vw, 9px);
+        --trip-number-size: clamp(22px, 2.6vw, 28px);
+        --trip-distance-size: clamp(16px, 1.8vw, 20px);
+        --trip-detail-size: clamp(10px, 1.15vw, 12px);
       }
     }
 
     @media (max-height: 360px) and (orientation: landscape) {
       :root {
+        --readout-right: max(16px, calc(env(safe-area-inset-right, 0px) + 8px));
         --readout-top: 154px;
-        --gear-top: 16px;
-        --speed-size: clamp(76px, 13vw, 104px);
+        --readout-gap: 12px;
+        --gear-top: 0px;
+        --gear-width: 46px;
+        --gear-size: clamp(32px, 5.8vw, 46px);
+        --speed-column-width: clamp(180px, 26vw, 206px);
+        --speed-size: clamp(66px, 10.8vw, 94px);
+        --speed-unit-size: clamp(8px, 1.2vw, 12px);
         --temp-top-gap: 22px;
         --temp-value-gap: 10px;
         --temp-bar-height: 12px;
         --temp-value-size: clamp(12px, 1.55vw, 16px);
+        --odometer-size: clamp(8px, 1.05vw, 11px);
+        --throttle-left: 150px;
+        --throttle-bottom: 24px;
+        --throttle-height: 140px;
+        --throttle-track-height: 78px;
+        --aux-width: 116px;
+        --aux-box-height: 28px;
+        --aux-gap: 4px;
+        --aux-label-size: clamp(6px, 0.8vw, 9px);
+        --aux-value-size: clamp(11px, 1.3vw, 15px);
+        --trip-left: calc(var(--aux-left) + var(--aux-width) + 8px);
+        --trip-width: 158px;
+        --trip-height: 86px;
+        --trip-clearance: 12px;
+        --trip-id-width: 36px;
+        --trip-title-size: clamp(5px, 0.72vw, 8px);
+        --trip-number-size: clamp(20px, 2.35vw, 26px);
+        --trip-distance-size: clamp(14px, 1.55vw, 18px);
+        --trip-detail-size: clamp(9px, 1vw, 11px);
       }
     }
 
@@ -499,8 +845,51 @@
       <div class="rpm-label">RPM <span>x1000</span></div>
     </section>
 
+    <section class="throttle-gauge" id="throttleGauge" aria-label="Throttle position">
+      <svg class="throttle-icon" viewBox="0 0 150 80" aria-hidden="true">
+        <path fill="currentColor" fill-rule="evenodd" d="M20 18a28 28 0 0 0 0 44h18a34 34 0 0 1 0-44H20Z" />
+        <path fill="currentColor" d="M40 27 86 33 82 61 39 54a14 14 0 0 1 1-27Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M91 17a34 34 0 0 0 0 46l35 5a39 39 0 0 1 0-56l-35 5Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M132 24a24 24 0 0 0 0 32h9a16 16 0 0 1 0-32h-9Z" />
+        <path fill="currentColor" fill-rule="evenodd" d="M141 16a24 24 0 1 0 0 48 24 24 0 0 0 0-48Zm0 17a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z" />
+        <path d="M86 28c7-25 37-25 45-2" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" />
+        <path d="m129 25 10-2-5 11" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <div class="throttle-track" aria-hidden="true"></div>
+      <span class="throttle-value" id="throttleValue">0%</span>
+    </section>
+
+    <section class="aux-metrics" aria-label="Secondary telemetry">
+      <div class="metric-box">
+        <span class="metric-label">MAP</span>
+        <strong class="metric-value" id="metricMap">--</strong>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">IAT</span>
+        <strong class="metric-value" id="metricIat">--</strong>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">BAT</span>
+        <strong class="metric-value" id="metricBattery">--</strong>
+      </div>
+    </section>
+
+    <section class="trip-card" id="tripCard" aria-label="Trip meter" role="button" tabindex="0">
+      <div class="trip-identity">
+        <span class="trip-word">TRIP</span>
+        <strong class="trip-number" id="tripNumber">1</strong>
+      </div>
+      <div class="trip-readings">
+        <strong class="trip-distance" id="tripDistance">0.0 KMS</strong>
+        <span class="trip-time" id="tripTime">00:00 hh:mm</span>
+        <span class="trip-economy" id="tripEconomy">0 kmpl</span>
+      </div>
+    </section>
+
     <section class="drive-readout" aria-label="Speed and gear">
-      <div class="gear-value" id="gearValue">N</div>
+      <div class="gear-column">
+        <div class="gear-value" id="gearValue">N</div>
+      </div>
       <div class="speed-column">
         <div class="speed-block">
           <span class="speed-value" id="speedValue">0</span>
@@ -520,10 +909,16 @@
               <span class="temp-tick" style="left: 100%"></span>
             </div>
           </div>
-          <span class="temp-value" id="engineTempValue">75.0 C</span>
+          <div class="temp-readings">
+            <span class="temp-value" id="engineTempValue">-- C</span>
+            <span class="odometer-value" id="odometerValue">53988.0 km</span>
+          </div>
         </div>
       </div>
     </section>
+    <div class="trip-reset-overlay" id="tripResetOverlay" aria-live="polite">
+      <div class="trip-reset-message" id="tripResetMessage">TRIP 1 RESET DONE</div>
+    </div>
   </main>
 
   <script>
@@ -545,7 +940,16 @@
       lastHue: null,
       lastSpeedText: "",
       lastGearText: "",
+      lastOdometerText: "",
       lastTempText: "",
+      lastThrottleText: "",
+      lastAuxMetricsKey: "",
+      lastTripKey: "",
+      lastTelemetry: null,
+      tripIndex: 1,
+      tripViewCount: 2,
+      tripPointer: null,
+      tripResetToastTimer: 0,
       lowPower: false,
       frameMs: 33,
       detailFrameMs: 66,
@@ -842,6 +1246,153 @@
       }
     }
 
+    function updateOdometer(odometerKm) {
+      const text = isNum(odometerKm) ? `${odometerKm.toFixed(1)} km` : "-- km";
+      if (state.lastOdometerText !== text) {
+        $("odometerValue").textContent = text;
+        state.lastOdometerText = text;
+      }
+    }
+
+    function formatTripTime(seconds) {
+      const safeSeconds = Math.max(0, Math.floor(isNum(seconds) ? seconds : 0));
+      const hours = Math.floor(safeSeconds / 3600);
+      const minutes = Math.floor((safeSeconds % 3600) / 60);
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} hh:mm`;
+    }
+
+    function tripNumber(t, slot, suffix, fallback = 0) {
+      return first(t, [`trip${slot}_${suffix}`], fallback);
+    }
+
+    function updateTripBox(t) {
+      const slot = clamp(state.tripIndex, 1, state.tripViewCount);
+      const distance = tripNumber(t, slot, "distance_km", 0);
+      const seconds = tripNumber(t, slot, "seconds", 0);
+      const kmpl = tripNumber(t, slot, "kmpl", 0);
+      const distanceText = `${distance.toFixed(1)} KMS`;
+      const timeText = formatTripTime(seconds);
+      const economyText = `${Math.round(kmpl)} kmpl`;
+      const tripText = String(slot);
+      const key = `${tripText}|${distanceText}|${timeText}|${economyText}`;
+      if (state.lastTripKey === key) return;
+
+      $("tripNumber").textContent = tripText;
+      $("tripDistance").textContent = distanceText;
+      $("tripTime").textContent = timeText;
+      $("tripEconomy").textContent = economyText;
+      state.lastTripKey = key;
+    }
+
+    function showTripResetOverlay(message) {
+      const overlay = $("tripResetOverlay");
+      const text = $("tripResetMessage");
+      text.textContent = message;
+      overlay.classList.add("show");
+      if (state.tripResetToastTimer) clearTimeout(state.tripResetToastTimer);
+      state.tripResetToastTimer = setTimeout(() => {
+        overlay.classList.remove("show");
+        state.tripResetToastTimer = 0;
+      }, 1450);
+    }
+
+    function setTripIndex(nextSlot) {
+      let slot = nextSlot;
+      if (slot > state.tripViewCount) slot = 1;
+      if (slot < 1) slot = state.tripViewCount;
+      if (slot === state.tripIndex) return;
+      state.tripIndex = slot;
+      state.lastTripKey = "";
+      updateTripBox(state.lastTelemetry || {});
+    }
+
+    async function resetCurrentTrip() {
+      const slot = state.tripIndex;
+      let ok = location.protocol === "file:";
+      if (location.protocol !== "file:") {
+        try {
+          const res = await fetch(`/trip/reset?slot=${slot}`, { cache: "no-store" });
+          const payload = await res.json();
+          if (res.ok && payload && payload.ok) {
+            state.lastTelemetry = Object.assign({}, state.lastTelemetry || {}, payload);
+            state.lastTripKey = "";
+            updateTripBox(state.lastTelemetry);
+            ok = true;
+          }
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+      showTripResetOverlay(`TRIP ${slot} RESET ${ok ? "DONE" : "FAILED"}`);
+    }
+
+    function setupTripGestures() {
+      const card = $("tripCard");
+      if (!card) return;
+
+      const clearTimer = () => {
+        if (state.tripPointer && state.tripPointer.timer) {
+          clearTimeout(state.tripPointer.timer);
+          state.tripPointer.timer = 0;
+        }
+      };
+
+      card.addEventListener("pointerdown", (event) => {
+        clearTimer();
+        const pointer = {
+          id: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          consumed: false,
+          timer: 0
+        };
+        pointer.timer = setTimeout(() => {
+          pointer.consumed = true;
+          resetCurrentTrip();
+        }, 900);
+        state.tripPointer = pointer;
+        if (card.setPointerCapture) card.setPointerCapture(event.pointerId);
+      });
+
+      card.addEventListener("pointermove", (event) => {
+        const pointer = state.tripPointer;
+        if (!pointer || pointer.id !== event.pointerId) return;
+        const dx = event.clientX - pointer.startX;
+        const dy = event.clientY - pointer.startY;
+        if (Math.hypot(dx, dy) > 16) {
+          clearTimer();
+        }
+      });
+
+      card.addEventListener("pointerup", (event) => {
+        const pointer = state.tripPointer;
+        if (!pointer || pointer.id !== event.pointerId) return;
+        clearTimer();
+        const dx = event.clientX - pointer.startX;
+        const dy = event.clientY - pointer.startY;
+        if (!pointer.consumed && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          setTripIndex(state.tripIndex + (dx > 0 ? 1 : -1));
+        }
+        state.tripPointer = null;
+      });
+
+      card.addEventListener("pointercancel", () => {
+        clearTimer();
+        state.tripPointer = null;
+      });
+
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight") {
+          setTripIndex(state.tripIndex + 1);
+        } else if (event.key === "ArrowLeft") {
+          setTripIndex(state.tripIndex - 1);
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          resetCurrentTrip();
+        }
+      });
+    }
+
     function mix(a, b, t) {
       return Math.round(a + (b - a) * clamp(t, 0, 1));
     }
@@ -878,11 +1429,13 @@
     }
 
     function updateEngineTemp(temp) {
-      const safeTemp = clamp(isNum(temp) ? temp : 75, 40, 140);
-      const pct = clamp((safeTemp - 60) / 60, 0, 1);
-      const [r, g, b] = tempColorForTemp(safeTemp);
+      const hasTemp = isNum(temp);
+      const displayTemp = hasTemp ? temp : null;
+      const gaugeTemp = clamp(hasTemp ? temp : 75, 40, 140);
+      const pct = clamp((gaugeTemp - 60) / 60, 0, 1);
+      const [r, g, b] = tempColorForTemp(gaugeTemp);
       const gauge = $("engineTempGauge");
-      const tempText = `${safeTemp.toFixed(1)} C`;
+      const tempText = hasTemp ? `${displayTemp.toFixed(1)} C` : "-- C";
 
       if (state.lastTempText !== tempText) {
         $("engineTempValue").textContent = tempText;
@@ -893,14 +1446,59 @@
       gauge.style.setProperty("--temp-glow", `rgba(${r},${g},${b},0.42)`);
     }
 
+    function updateThrottle(throttle) {
+      const safeThrottle = clamp(isNum(throttle) ? throttle : 0, 0, 100);
+      const gauge = $("throttleGauge");
+      const throttleText = `${Math.round(safeThrottle)}%`;
+
+      if (state.lastThrottleText !== throttleText) {
+        $("throttleValue").textContent = throttleText;
+        state.lastThrottleText = throttleText;
+      }
+      gauge.style.setProperty("--throttle-pct", `${safeThrottle.toFixed(1)}%`);
+    }
+
+    function metricNumber(value, decimals, unit = "") {
+      if (!isNum(value)) return "--";
+      const formatted = decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
+      return unit ? `${formatted} ${unit}` : formatted;
+    }
+
+    function updateAuxMetrics(t) {
+      const rows = [
+        ["metricMap", metricNumber(first(t, ["map_kpa", "map"], null), 0, "kPa")],
+        ["metricIat", metricNumber(first(t, ["iat_c", "iat"], null), 1, "C")],
+        ["metricBattery", metricNumber(first(t, ["battery_v", "vbatt"], null), 1, "V")]
+      ];
+      const key = rows.map((row) => row[1]).join("|");
+      if (state.lastAuxMetricsKey === key) return;
+      state.lastAuxMetricsKey = key;
+      rows.forEach(([id, value]) => {
+        const node = $(id);
+        if (node) node.textContent = value;
+      });
+    }
+
     function renderTelemetry(t, now = performance.now()) {
+      state.lastTelemetry = t;
+      state.tripViewCount = Math.max(1, Math.floor(first(t, ["trip_count"], state.tripViewCount)));
+      if (state.tripIndex > state.tripViewCount) {
+        state.tripIndex = 1;
+        state.lastTripKey = "";
+      }
       const rpm = first(t, ["rpm"], 0);
       const speed = first(t, ["speed_kph", "speed", "vehicle_speed"], 0);
       const gear = firstText(t, ["gear", "gear_position", "gear_pos"], inferGear(speed));
-      const engineTemp = first(t, ["engine_temp_c", "coolant_c", "coolant", "engine_temp", "temp_c"], 75);
-      updateTach(rpm, engineTemp, now);
+      const odometer = first(t, ["odometer_km", "odo_km"], null);
+      const engineTemp = first(t, ["engine_temp_c", "coolant_c", "coolant", "engine_temp", "temp_c"], null);
+      const throttle = first(t, ["tps_pct", "tps", "throttle_pct", "throttle"], 0);
+      updateTach(rpm, isNum(engineTemp) ? engineTemp : 90, now);
       updateSpeedAndGear(speed, gear);
+      updateOdometer(odometer);
       updateEngineTemp(engineTemp);
+      updateThrottle(throttle);
+      updateAuxMetrics(t);
+      updateTripBox(t);
     }
 
     function renderPendingTelemetry(now) {
@@ -947,6 +1545,10 @@
       const speed = sweep * 168;
       const gear = inferGear(speed);
       const engineTemp = tempPhase === 0 ? 70 : 80;
+      const throttlePhase = triangleSweep(elapsed + 0.8, 3.7);
+      const throttle = clamp(4 + Math.pow(throttlePhase, 1.6) * 92, 0, 100);
+      const demoDistance = (elapsed * 0.038) % 240;
+      const demoSeconds = Math.floor(elapsed * 12) % 360000;
       return {
         seq: state.seq,
         ts_ms: Math.round(elapsed * 1000),
@@ -954,7 +1556,24 @@
         rpm,
         speed_kph: speed,
         gear,
-        engine_temp_c: engineTemp
+        odometer_km: 53988 + elapsed * 0.01,
+        engine_temp_c: engineTemp,
+        iat_c: 30.5 + Math.sin(elapsed * 0.45) * 2.0,
+        map_kpa: clamp(28 + throttle * 0.65 + rpm / 900, 20, 105),
+        battery_v: 14.1 + Math.sin(elapsed * 0.8) * 0.08,
+        tps_pct: throttle,
+        tps_abs_pct: clamp(10.6 + throttle * 0.894, 0, 100),
+        trip_count: 2,
+        trip1_distance_km: demoDistance,
+        trip1_seconds: demoSeconds,
+        trip1_kmpl: 20.1 + Math.sin(elapsed * 0.3) * 1.5,
+        trip2_distance_km: (demoDistance * 0.42) % 120,
+        trip2_seconds: Math.floor(demoSeconds * 0.54),
+        trip2_kmpl: 22.4 + Math.sin(elapsed * 0.22) * 1.2,
+        link_quality_pct: 100,
+        rx_frames: state.seq * 37,
+        tx_requests: state.sseConnected ? state.seq * 2 : 0,
+        pid_timeouts: 0
       };
     }
 
@@ -984,7 +1603,10 @@
       buildRpmScale();
       updateTach(0, 75, performance.now());
       updateSpeedAndGear(0, "N");
-      updateEngineTemp(75);
+      updateEngineTemp(null);
+      updateThrottle(0);
+      updateTripBox({});
+      setupTripGestures();
       connectSSE();
 
       setInterval(() => {

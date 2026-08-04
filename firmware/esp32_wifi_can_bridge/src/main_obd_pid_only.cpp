@@ -6,8 +6,9 @@
 // - MCP2515 VCC should be 3V3 when connected directly to ESP32 GPIO.
 // - CANH/CANL go to the diagnostic adapter only after bench upload/testing.
 //
-// This firmware sends read-only OBD-II Mode 01 requests and broadcasts JSON
-// telemetry over UDP to 192.168.4.255:4210.
+// OBD polling test build.
+// This variant ignores passive decode values and builds dashboard telemetry
+// from standard OBD-II Mode 01 PID requests.
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -16,14 +17,6 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <math.h>
-
-#ifndef D400_BENCH_SENDER_ENABLED
-#define D400_BENCH_SENDER_ENABLED 0
-#endif
-
-#ifndef D400_CAN_BITRATE
-#define D400_CAN_BITRATE 500000UL
-#endif
 
 static const char* AP_SSID = "D400Telemetry";
 static const char* AP_PASS = "dominar400";
@@ -45,14 +38,13 @@ static const bool WIFI_MOCK_TELEMETRY_ENABLED = false;
 // receives anything, check the crystal marking and try 16.
 static const uint8_t MCP_CLOCK_MHZ = 8;
 // First live-bike test: listen only, no requests transmitted onto the bike CAN bus.
-static const bool CAN_OBD_REQUESTS_ENABLED = false;
-static const bool CAN_LISTEN_ONLY = true;
-static const bool CAN_BENCH_SENDER_ENABLED = D400_BENCH_SENDER_ENABLED;
-static const bool BENCH_AUTOSTART_ZERO_RPM = CAN_BENCH_SENDER_ENABLED;
-static const uint32_t CAN_BITRATE = D400_CAN_BITRATE;
-static const uint32_t PID_TIMEOUT_MS = 35;
+static const bool CAN_OBD_REQUESTS_ENABLED = true;
+static const bool CAN_LISTEN_ONLY = false;
+static const uint32_t CAN_BITRATE = 500000;
+static const uint32_t PID_TIMEOUT_MS = 32;
 static const uint32_t TELEMETRY_INTERVAL_MS = 50;
-static const uint32_t PID_INTERVAL_MS = 15;
+static const uint32_t PID_INTERVAL_MS = 1;
+static const uint32_t PID_MIN_REQUEST_GAP_MS = 2;
 static const uint8_t OBD_RPM_TEST_SAMPLES = 5;
 static const uint32_t OBD_RPM_TEST_TIMEOUT_MS = 90;
 static const uint32_t OBD_LOG_DEFAULT_SECONDS = 10;
@@ -73,16 +65,7 @@ static const uint32_t CORRELATE_SUMMARY_INTERVAL_MS = 250;
 static const uint8_t CORRELATE_DRAIN_LIMIT = 192;
 static const float PASSIVE_TPS_IDLE_OBD_PCT = 27.0f * 100.0f / 255.0f;
 static const float PASSIVE_TPS_ABS_SCALE = (100.0f - PASSIVE_TPS_IDLE_OBD_PCT) / 255.0f;
-static const float PASSIVE_MAP_OFFSET_KPA = 1.0f;
-static const float PASSIVE_COOLANT_SCALE = 0.099314f;
-static const float PASSIVE_COOLANT_OFFSET = 2983.421676f;
-static const float PASSIVE_IAT_SCALE = 0.095760f;
-static const float PASSIVE_IAT_OFFSET = 34.038803f;
-static const float PASSIVE_301_TACH_RPM_SCALE = 40.0f;
-static const float PASSIVE_310_BUCKET_RPM_SCALE = 100.0f;
-static const float PASSIVE_30C_SPEED_KPH_SCALE = 118.0f;
-static const float PASSIVE_303_BATTERY_V_SCALE = 0.1f;
-static const uint32_t PASSIVE_RPM_PAIR_MAX_AGE_MS = 160;
+static const char* FIRMWARE_VARIANT = "obd-polling";
 
 WiFiUDP udp;
 WebServer http(80);
@@ -148,37 +131,14 @@ bool hasPassiveRpm = false;
 uint16_t lastPassiveRpmRaw = 0;
 uint32_t lastPassiveRpmFrameId = 0;
 uint32_t lastPassiveRpmMs = 0;
-bool hasPassive301Tach = false;
-uint8_t lastPassive301TachRaw = 0;
-uint32_t lastPassive301TachMs = 0;
-bool hasPassive302RpmCompanion = false;
-uint8_t lastPassive302RpmB1 = 0;
-uint8_t lastPassive302RpmB3 = 0;
-uint8_t lastPassive302RpmB7 = 0;
-uint32_t lastPassive302RpmCompanionMs = 0;
 bool hasPassiveTps = false;
 uint8_t lastPassiveTpsRaw = 0;
 float lastPassiveTpsGrip = NAN;
 float lastPassiveTpsAbs = NAN;
 uint32_t lastPassiveTpsMs = 0;
-bool hasPassiveCoolant = false;
-int16_t lastPassiveCoolantRaw = 0;
-uint32_t lastPassiveCoolantMs = 0;
-bool hasPassiveIat = false;
-uint8_t lastPassiveIatRaw = 0;
-uint32_t lastPassiveIatMs = 0;
-bool hasPassiveMap = false;
-uint8_t lastPassiveMapRaw = 0;
-uint32_t lastPassiveMapMs = 0;
 bool hasPassiveGear = false;
 uint8_t lastPassiveGearRaw = 0xFF;
 uint32_t lastPassiveGearMs = 0;
-bool hasPassiveSpeed = false;
-uint16_t lastPassiveSpeedRaw = 0;
-uint32_t lastPassiveSpeedMs = 0;
-bool hasPassiveBattery = false;
-uint8_t lastPassiveBatteryRaw = 0;
-uint32_t lastPassiveBatteryMs = 0;
 bool captureActive = false;
 File captureFile;
 String captureBuffer;
@@ -577,12 +537,6 @@ class Mcp2515 {
 
   bool sendFrame(const CanFrame& frame) {
     if (frame.extended || frame.dlc > 8) return false;
-    if (readRegister(TXB0CTRL) & TXREQ) {
-      uint32_t start = micros();
-      while ((readRegister(TXB0CTRL) & TXREQ) && micros() - start < 2500UL) {
-        yield();
-      }
-    }
     if (readRegister(TXB0CTRL) & TXREQ) abortPendingTx();
     if (readRegister(TXB0CTRL) & TXREQ) return false;
 
@@ -622,18 +576,6 @@ class Mcp2515 {
     return readRegister(EFLG);
   }
 
-  uint8_t txErrorCount() {
-    return readRegister(TEC);
-  }
-
-  uint8_t rxErrorCount() {
-    return readRegister(REC);
-  }
-
-  uint8_t txBuffer0Ctrl() {
-    return readRegister(TXB0CTRL);
-  }
-
   uint8_t rxOverflowFlags() {
     return readRegister(EFLG) & (RX0OVR | RX1OVR);
   }
@@ -666,8 +608,6 @@ class Mcp2515 {
   static const uint8_t CANINTE = 0x2B;
   static const uint8_t CANINTF = 0x2C;
   static const uint8_t EFLG = 0x2D;
-  static const uint8_t TEC = 0x1C;
-  static const uint8_t REC = 0x1D;
 
   static const uint8_t TXB0CTRL = 0x30;
   static const uint8_t TXB0SIDH = 0x31;
@@ -798,17 +738,19 @@ Mcp2515 can;
 struct PidRequest {
   uint8_t pid;
   uint8_t neededBytes;
+  uint32_t intervalMs;
+  uint32_t lastRequestMs;
+  const char* name;
 };
 
-static const PidRequest PID_SCHEDULE[] = {
-  {0x0C, 2},  // RPM
-  {0x0D, 1},  // speed
-  {0x11, 1},  // throttle
-  {0x0C, 2},  // RPM again for faster tach updates
-  {0x05, 1},  // coolant
-  {0x0B, 1},  // manifold pressure
-  {0x0F, 1},  // intake air temp
-  {0x42, 2},  // ECU voltage
+PidRequest PID_SCHEDULE[] = {
+  {0x0C, 2, 200, 0, "rpm"},          // 5 Hz target
+  {0x11, 1, 200, 0, "tps"},          // 5 Hz target
+  {0x0B, 1, 500, 0, "map"},          // 2 Hz target
+  {0x0D, 1, 500, 0, "speed"},        // 2 Hz target
+  {0x05, 1, 1000, 0, "coolant"},     // 1 Hz target
+  {0x0F, 1, 2000, 0, "iat"},         // 0.5 Hz target
+  {0x42, 2, 2000, 0, "ecu_voltage"}, // 0.5 Hz target
 };
 
 struct ObdLogPid {
@@ -877,735 +819,6 @@ void appendFrameDataHex(String& packet, const uint8_t* data, uint8_t dlc) {
   for (uint8_t i = 0; i < dlc; i++) {
     if (i > 0) packet += ' ';
     appendHexByte(packet, data[i]);
-  }
-}
-
-int8_t hexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
-bool parseStandardCanId(const String& value, uint32_t& id) {
-  String trimmed = value;
-  trimmed.trim();
-  const char* start = trimmed.c_str();
-  if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-    start += 2;
-  }
-  char* end = nullptr;
-  unsigned long parsed = strtoul(start, &end, 16);
-  if (end == start || *end != '\0' || parsed > 0x7FFUL) return false;
-  id = static_cast<uint32_t>(parsed);
-  return true;
-}
-
-bool parseHexPayload(const String& value, uint8_t* data, uint8_t& dlc) {
-  String compact;
-  compact.reserve(value.length());
-  for (size_t i = 0; i < value.length(); i++) {
-    char c = value[i];
-    if (c == ' ' || c == ':' || c == '-' || c == ',' || c == '_') continue;
-    if (c == '0' && i + 1 < value.length() && (value[i + 1] == 'x' || value[i + 1] == 'X')) {
-      i++;
-      continue;
-    }
-    if (hexNibble(c) < 0) return false;
-    compact += c;
-  }
-
-  if (compact.length() == 0 || (compact.length() % 2) != 0 || compact.length() > 16) return false;
-
-  dlc = compact.length() / 2;
-  for (uint8_t i = 0; i < dlc; i++) {
-    int8_t hi = hexNibble(compact[i * 2]);
-    int8_t lo = hexNibble(compact[i * 2 + 1]);
-    if (hi < 0 || lo < 0) return false;
-    data[i] = static_cast<uint8_t>((hi << 4) | lo);
-  }
-  return true;
-}
-
-bool parseBenchByteIndex(const String& value, uint8_t& index) {
-  String trimmed = value;
-  trimmed.trim();
-  if (trimmed.length() == 0) return false;
-
-  char* end = nullptr;
-  long parsed = strtol(trimmed.c_str(), &end, 10);
-  if (end == trimmed.c_str() || *end != '\0' || parsed < 0 || parsed > 7) return false;
-
-  index = static_cast<uint8_t>(parsed);
-  return true;
-}
-
-bool parseBenchByteMask(const String& value, uint8_t dlc, uint8_t& mask) {
-  if (dlc == 0 || dlc > 8) return false;
-
-  String spec = value;
-  spec.trim();
-  spec.toLowerCase();
-
-  const uint8_t validMask = dlc >= 8 ? 0xFF : static_cast<uint8_t>((1U << dlc) - 1U);
-  if (spec == "all" || spec == "full" || spec == "*") {
-    mask = validMask;
-    return true;
-  }
-
-  if (spec.startsWith("0x")) {
-    char* end = nullptr;
-    unsigned long parsed = strtoul(spec.c_str() + 2, &end, 16);
-    if (end == spec.c_str() + 2 || *end != '\0' || parsed == 0 || parsed > 0xFFUL) return false;
-    if ((parsed & ~static_cast<unsigned long>(validMask)) != 0) return false;
-    mask = static_cast<uint8_t>(parsed);
-    return true;
-  }
-
-  spec.replace(";", ",");
-  spec.replace("|", ",");
-  spec.replace(" ", ",");
-
-  uint8_t parsedMask = 0;
-  int start = 0;
-  while (start < spec.length()) {
-    int end = spec.indexOf(',', start);
-    if (end < 0) end = spec.length();
-
-    String token = spec.substring(start, end);
-    token.trim();
-    if (token.length() > 0) {
-      int dash = token.indexOf('-');
-      if (dash >= 0) {
-        uint8_t first = 0;
-        uint8_t last = 0;
-        if (!parseBenchByteIndex(token.substring(0, dash), first) ||
-            !parseBenchByteIndex(token.substring(dash + 1), last) ||
-            first > last || last >= dlc) {
-          return false;
-        }
-        for (uint8_t b = first; b <= last; b++) {
-          parsedMask |= static_cast<uint8_t>(1U << b);
-        }
-      } else {
-        uint8_t byteIndex = 0;
-        if (!parseBenchByteIndex(token, byteIndex) || byteIndex >= dlc) return false;
-        parsedMask |= static_cast<uint8_t>(1U << byteIndex);
-      }
-    }
-
-    start = end + 1;
-  }
-
-  if (parsedMask == 0) return false;
-  mask = parsedMask;
-  return true;
-}
-
-uint8_t countBenchMaskBytes(uint8_t mask) {
-  uint8_t count = 0;
-  for (uint8_t b = 0; b < 8; b++) {
-    if ((mask & static_cast<uint8_t>(1U << b)) != 0) count++;
-  }
-  return count;
-}
-
-struct BenchReplayFrameDef {
-  uint16_t id;
-  uint8_t dlc;
-  uint8_t data[8];
-  uint16_t periodMs;
-};
-
-struct BenchProfileDef {
-  const char* mode;
-  uint16_t rpmHint;
-  const BenchReplayFrameDef* frames;
-  size_t frameCount;
-};
-
-struct BenchSequenceFrameDef {
-  uint16_t offsetMs;
-  uint16_t id;
-  uint8_t dlc;
-  uint8_t data[8];
-};
-
-struct BenchSequenceProfileDef {
-  const char* mode;
-  uint16_t rpmHint;
-  const BenchSequenceFrameDef* frames;
-  size_t frameCount;
-  uint16_t durationMs;
-};
-
-enum class BenchReplayKind : uint8_t {
-  None,
-  Periodic,
-  Sequence,
-};
-
-static const uint8_t BENCH_REPLAY_MAX_FRAMES = 24;
-static const uint8_t BENCH_SEQUENCE_MAX_SENDS_PER_TICK = 32;
-
-static const BenchReplayFrameDef BENCH_PROFILE_RUN0[] = {
-  {0x12B, 8, {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, 20},
-  {0x301, 8, {0x00, 0x00, 0x00, 0x85, 0x00, 0x00, 0x00, 0xB6}, 20},
-  {0x302, 8, {0x8B, 0xA4, 0x00, 0x00, 0x8B, 0xB9, 0x5B, 0x32}, 20},
-  {0x303, 8, {0x00, 0x7B, 0x80, 0x80, 0xFF, 0x00, 0x80, 0x80}, 50},
-  {0x304, 8, {0x08, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00}, 50},
-  {0x30A, 8, {0x27, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 250},
-  {0x30B, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x2D, 0xDE}, 200},
-  {0x30C, 2, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x310, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 20},
-  {0x311, 8, {0x00, 0x00, 0x00, 0x00, 0x01, 0x70, 0x00, 0x00}, 20},
-  {0x312, 8, {0x40, 0x00, 0xBF, 0xFD, 0xFF, 0xFF, 0x40, 0x00}, 20},
-  {0x313, 8, {0x00, 0x00, 0xBF, 0xFD, 0xFF, 0xFF, 0x00, 0x00}, 20},
-  {0x314, 5, {0xB5, 0x00, 0x00, 0x1C, 0x48, 0x00, 0x00, 0x00}, 50},
-  {0x315, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x316, 8, {0x00, 0x03, 0x69, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x317, 8, {0x0E, 0x15, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x318, 8, {0x00, 0x00, 0x00, 0xFA, 0xB1, 0x02, 0x7E, 0x00}, 200},
-  {0x319, 8, {0x00, 0x00, 0x00, 0xC4, 0x00, 0xD9, 0x01, 0x12}, 200},
-  {0x447, 8, {0x00, 0x02, 0x9A, 0xF0, 0x00, 0x00, 0x54, 0x6C}, 100},
-  {0x448, 8, {0x08, 0x34, 0x94, 0x00, 0x03, 0xD5, 0x09, 0x3E}, 200},
-  {0x500, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x540, 8, {0x15, 0x00, 0x80, 0x00, 0x7D, 0x76, 0x00, 0x00}, 20},
-  {0x542, 8, {0x80, 0x00, 0x80, 0x00, 0x86, 0xCE, 0x80, 0x00}, 20},
-};
-
-static const BenchReplayFrameDef BENCH_PROFILE_IDLE[] = {
-  {0x12B, 8, {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, 20},
-  {0x301, 8, {0x2C, 0x00, 0x00, 0x1F, 0x02, 0x2B, 0x01, 0xBA}, 20},
-  {0x302, 8, {0x8B, 0xDD, 0x01, 0xAB, 0x8B, 0xED, 0x36, 0xA5}, 20},
-  {0x303, 8, {0x00, 0x89, 0x8F, 0x8F, 0xFF, 0x00, 0x00, 0x80}, 50},
-  {0x304, 8, {0x18, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00}, 50},
-  {0x30A, 8, {0x27, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 250},
-  {0x30B, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x2D, 0xE4}, 200},
-  {0x30C, 2, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x310, 8, {0x00, 0x00, 0x08, 0x00, 0x0F, 0x0F, 0x40, 0x00}, 20},
-  {0x311, 8, {0x00, 0xA9, 0x04, 0x61, 0x01, 0x70, 0x00, 0x00}, 20},
-  {0x312, 8, {0x40, 0x00, 0x2D, 0xE3, 0xFF, 0xFF, 0x50, 0x00}, 20},
-  {0x313, 8, {0x00, 0x00, 0x2D, 0xE3, 0xFF, 0xFF, 0x00, 0x00}, 20},
-  {0x314, 5, {0xB3, 0xFF, 0x60, 0x1B, 0xF8, 0x00, 0x00, 0x00}, 50},
-  {0x315, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x316, 8, {0x00, 0x03, 0x69, 0x00, 0x7E, 0x00, 0x00, 0x00}, 100},
-  {0x317, 8, {0x56, 0x15, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x318, 8, {0x00, 0x00, 0x00, 0xFA, 0xB1, 0x02, 0x7E, 0x00}, 200},
-  {0x319, 8, {0x00, 0x00, 0x00, 0xC4, 0x00, 0xD9, 0x01, 0x12}, 200},
-  {0x447, 8, {0x00, 0x02, 0x9D, 0x7C, 0x00, 0x00, 0x54, 0x98}, 100},
-  {0x448, 8, {0x08, 0x34, 0x94, 0x00, 0x03, 0xD6, 0x09, 0x3E}, 200},
-  {0x500, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x540, 8, {0x15, 0x00, 0x80, 0x00, 0x7D, 0x76, 0x00, 0x00}, 20},
-  {0x542, 8, {0x80, 0x00, 0x80, 0x14, 0x32, 0x62, 0x80, 0x00}, 20},
-};
-
-static const BenchReplayFrameDef BENCH_PROFILE_RPM2000[] = {
-  {0x12B, 8, {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, 20},
-  {0x301, 8, {0x35, 0x00, 0x02, 0x20, 0x02, 0x28, 0x01, 0xBA}, 20},
-  {0x302, 8, {0x8C, 0x55, 0x01, 0xA2, 0x8B, 0xFE, 0x35, 0xEB}, 20},
-  {0x303, 8, {0x00, 0x8B, 0x94, 0x94, 0x1D, 0x00, 0x00, 0x80}, 50},
-  {0x304, 8, {0x18, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x30A, 8, {0x27, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 250},
-  {0x30B, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x2D, 0xE4}, 200},
-  {0x30C, 2, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x310, 8, {0x00, 0x00, 0x3A, 0x00, 0x14, 0x14, 0xC0, 0x00}, 20},
-  {0x311, 8, {0x04, 0x36, 0x04, 0x30, 0x01, 0x6D, 0x00, 0x00}, 20},
-  {0x312, 8, {0x40, 0x26, 0x32, 0x02, 0xFF, 0xFF, 0x60, 0x00}, 20},
-  {0x313, 8, {0x00, 0x00, 0x31, 0x53, 0xFF, 0xFF, 0x00, 0x00}, 20},
-  {0x314, 5, {0xB0, 0xFF, 0xA6, 0x1D, 0x10, 0x00, 0x00, 0x00}, 50},
-  {0x315, 8, {0x00, 0x00, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x316, 8, {0x80, 0x03, 0x69, 0x00, 0xA8, 0x00, 0x00, 0x00}, 100},
-  {0x317, 8, {0x74, 0x15, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x318, 8, {0x00, 0x00, 0x00, 0xFA, 0xB1, 0x02, 0x7E, 0x00}, 200},
-  {0x319, 8, {0x00, 0x00, 0x00, 0xC4, 0x00, 0xD9, 0x01, 0x12}, 200},
-  {0x447, 8, {0x00, 0x02, 0x9D, 0xB6, 0x00, 0x00, 0x54, 0x9C}, 100},
-  {0x448, 8, {0x08, 0x34, 0x94, 0x00, 0x03, 0xD6, 0x09, 0x3E}, 200},
-  {0x500, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x540, 8, {0x15, 0x00, 0x80, 0x2A, 0x7D, 0x76, 0x00, 0x00}, 20},
-  {0x542, 8, {0x81, 0x97, 0x80, 0x11, 0x26, 0x20, 0x80, 0x00}, 20},
-};
-
-static const BenchReplayFrameDef BENCH_PROFILE_RPM3000[] = {
-  {0x12B, 8, {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, 20},
-  {0x301, 8, {0x5F, 0x00, 0x08, 0x1F, 0x01, 0xDE, 0x03, 0xBA}, 20},
-  {0x302, 8, {0x8C, 0xD5, 0x01, 0x6D, 0x8C, 0x0C, 0x32, 0x2E}, 20},
-  {0x303, 8, {0x00, 0x8A, 0xA6, 0xA6, 0xA9, 0x00, 0x00, 0x80}, 50},
-  {0x304, 8, {0x38, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x30A, 8, {0x27, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 250},
-  {0x30B, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x2D, 0xE4}, 200},
-  {0x30C, 2, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x310, 8, {0x00, 0x00, 0x23, 0x00, 0x26, 0x26, 0xC0, 0x00}, 20},
-  {0x311, 8, {0x09, 0x93, 0x04, 0x20, 0x01, 0x6A, 0x00, 0x00}, 20},
-  {0x312, 8, {0x40, 0x00, 0x3E, 0xE7, 0xFF, 0xFF, 0x40, 0x00}, 20},
-  {0x313, 8, {0x00, 0x00, 0x3E, 0xE7, 0xFF, 0xFF, 0x00, 0x00}, 20},
-  {0x314, 5, {0xAD, 0x00, 0x00, 0x1F, 0x90, 0x00, 0x00, 0x00}, 50},
-  {0x315, 8, {0x06, 0x00, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x316, 8, {0x80, 0x03, 0x69, 0x00, 0xF8, 0x00, 0x00, 0x00}, 100},
-  {0x317, 8, {0x96, 0x15, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x318, 8, {0x00, 0x00, 0x00, 0xFA, 0xB1, 0x02, 0x7E, 0x00}, 200},
-  {0x319, 8, {0x00, 0x00, 0x00, 0xC4, 0x00, 0xD9, 0x01, 0x12}, 200},
-  {0x447, 8, {0x00, 0x02, 0x9D, 0xFA, 0x00, 0x00, 0x54, 0xA0}, 100},
-  {0x448, 8, {0x08, 0x34, 0x94, 0x00, 0x03, 0xD6, 0x09, 0x3E}, 200},
-  {0x500, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x540, 8, {0x15, 0x00, 0x80, 0x82, 0x7D, 0x76, 0x00, 0x00}, 20},
-  {0x542, 8, {0x78, 0x0C, 0x80, 0x09, 0x49, 0x88, 0x80, 0x00}, 20},
-};
-
-static const BenchReplayFrameDef BENCH_PROFILE_RPM4000[] = {
-  {0x12B, 8, {0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00}, 20},
-  {0x301, 8, {0x72, 0x00, 0x09, 0x20, 0x02, 0x03, 0x03, 0xBA}, 20},
-  {0x302, 8, {0x8D, 0x34, 0x01, 0x81, 0x8C, 0x14, 0x32, 0xE7}, 20},
-  {0x303, 8, {0x00, 0x89, 0xAD, 0xAD, 0xAE, 0x00, 0x00, 0x80}, 50},
-  {0x304, 8, {0x38, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x30A, 8, {0x27, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 250},
-  {0x30B, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x2D, 0xE4}, 200},
-  {0x30C, 2, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 50},
-  {0x310, 8, {0x00, 0x00, 0x19, 0x00, 0x2C, 0x2C, 0xC0, 0x00}, 20},
-  {0x311, 8, {0x0E, 0x7A, 0x04, 0x10, 0x01, 0x6B, 0x00, 0x00}, 20},
-  {0x312, 8, {0x40, 0x00, 0x42, 0xB5, 0xFF, 0xFF, 0x40, 0x00}, 20},
-  {0x313, 8, {0x00, 0x00, 0x42, 0xB5, 0xFF, 0xFF, 0x00, 0x00}, 20},
-  {0x314, 5, {0xA9, 0x00, 0x00, 0x1E, 0xF0, 0x00, 0x00, 0x00}, 50},
-  {0x315, 8, {0x06, 0x00, 0x6B, 0x00, 0x00, 0x00, 0x00, 0x00}, 100},
-  {0x316, 8, {0x80, 0x03, 0x69, 0x01, 0x05, 0x00, 0x00, 0x00}, 100},
-  {0x317, 8, {0x9E, 0x15, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x318, 8, {0x00, 0x00, 0x00, 0xFA, 0xB1, 0x02, 0x7E, 0x00}, 200},
-  {0x319, 8, {0x00, 0x00, 0x00, 0xC4, 0x00, 0xD9, 0x01, 0x12}, 200},
-  {0x447, 8, {0x00, 0x02, 0x9E, 0x2F, 0x00, 0x00, 0x54, 0xA4}, 100},
-  {0x448, 8, {0x08, 0x34, 0x94, 0x00, 0x03, 0xD6, 0x09, 0x3E}, 200},
-  {0x500, 8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 200},
-  {0x540, 8, {0x15, 0x00, 0x80, 0x9A, 0x7D, 0x76, 0x00, 0x00}, 20},
-  {0x542, 8, {0x7C, 0x86, 0x80, 0x08, 0x8C, 0x41, 0x80, 0x00}, 20},
-};
-
-static const BenchProfileDef BENCH_PROFILES[] = {
-  {"run0", 0, BENCH_PROFILE_RUN0, sizeof(BENCH_PROFILE_RUN0) / sizeof(BENCH_PROFILE_RUN0[0])},
-  {"idle", 1700, BENCH_PROFILE_IDLE, sizeof(BENCH_PROFILE_IDLE) / sizeof(BENCH_PROFILE_IDLE[0])},
-  {"rpm2000", 2000, BENCH_PROFILE_RPM2000, sizeof(BENCH_PROFILE_RPM2000) / sizeof(BENCH_PROFILE_RPM2000[0])},
-  {"rpm3000", 3000, BENCH_PROFILE_RPM3000, sizeof(BENCH_PROFILE_RPM3000) / sizeof(BENCH_PROFILE_RPM3000[0])},
-  {"rpm4000", 4000, BENCH_PROFILE_RPM4000, sizeof(BENCH_PROFILE_RPM4000) / sizeof(BENCH_PROFILE_RPM4000[0])},
-};
-
-#include "bench_sequence_profiles.h"
-
-static const BenchProfileDef* benchReplayProfile = nullptr;
-static const BenchSequenceProfileDef* benchSequenceProfile = nullptr;
-uint32_t benchReplayNextDueMs[BENCH_REPLAY_MAX_FRAMES] = {0};
-uint32_t benchReplayStartedMs = 0;
-uint32_t benchReplaySentFrames = 0;
-uint32_t benchReplayFailedFrames = 0;
-uint32_t benchSequenceLoopStartedMs = 0;
-size_t benchSequenceNextIndex = 0;
-bool benchReplayActive = false;
-bool benchReplayNormalMode = false;
-BenchReplayKind benchReplayKind = BenchReplayKind::None;
-bool benchRpm310Override = false;
-uint8_t benchRpm310Raw = 0;
-String benchRpm310Field = "b45";
-bool benchFrameOverride = false;
-uint16_t benchFrameOverrideId = 0;
-uint8_t benchFrameOverrideDlc = 0;
-uint8_t benchFrameOverrideData[8] = {0};
-String benchFrameOverrideSource = "";
-struct BenchFrameOverrideState {
-  bool used = false;
-  uint16_t id = 0;
-  uint8_t dlc = 0;
-  uint8_t data[8] = {0};
-  uint8_t mask = 0xFF;
-  bool replaceDlc = true;
-};
-static const uint8_t BENCH_FRAME_OVERRIDE_MAX = 24;
-BenchFrameOverrideState benchFrameOverrides[BENCH_FRAME_OVERRIDE_MAX];
-uint8_t benchFrameOverrideCount = 0;
-String benchFrameOverrideGroup = "";
-
-void clearBenchRpm310Override() {
-  benchRpm310Override = false;
-  benchRpm310Raw = 0;
-  benchRpm310Field = "b45";
-}
-
-void clearBenchFrameOverride() {
-  benchFrameOverride = false;
-  benchFrameOverrideId = 0;
-  benchFrameOverrideDlc = 0;
-  for (uint8_t i = 0; i < 8; i++) benchFrameOverrideData[i] = 0;
-  benchFrameOverrideSource = "";
-  for (uint8_t i = 0; i < BENCH_FRAME_OVERRIDE_MAX; i++) {
-    benchFrameOverrides[i].used = false;
-    benchFrameOverrides[i].id = 0;
-    benchFrameOverrides[i].dlc = 0;
-    benchFrameOverrides[i].mask = 0;
-    benchFrameOverrides[i].replaceDlc = true;
-    for (uint8_t b = 0; b < 8; b++) benchFrameOverrides[i].data[b] = 0;
-  }
-  benchFrameOverrideCount = 0;
-  benchFrameOverrideGroup = "";
-}
-
-void clearBenchOverrides() {
-  clearBenchRpm310Override();
-  clearBenchFrameOverride();
-}
-
-void applyBenchFrameOverride(CanFrame& frame) {
-  for (uint8_t i = 0; i < benchFrameOverrideCount; i++) {
-    if (!benchFrameOverrides[i].used || frame.id != benchFrameOverrides[i].id) continue;
-    if (benchFrameOverrides[i].replaceDlc) {
-      frame.dlc = benchFrameOverrides[i].dlc;
-    }
-    const uint8_t copyDlc = min(frame.dlc, benchFrameOverrides[i].dlc);
-    for (uint8_t b = 0; b < copyDlc; b++) {
-      if ((benchFrameOverrides[i].mask & static_cast<uint8_t>(1U << b)) == 0) continue;
-      frame.data[b] = benchFrameOverrides[i].data[b];
-    }
-    return;
-  }
-
-  if (!benchFrameOverride || frame.id != benchFrameOverrideId) return;
-
-  frame.dlc = benchFrameOverrideDlc;
-  for (uint8_t b = 0; b < benchFrameOverrideDlc; b++) {
-    frame.data[b] = benchFrameOverrideData[b];
-  }
-}
-
-void applyBenchRpm310Override(CanFrame& frame) {
-  if (!benchRpm310Override || frame.id != 0x310 || frame.dlc < 6) return;
-
-  if (benchRpm310Field == "b2" || benchRpm310Field == "all") {
-    frame.data[2] = benchRpm310Raw;
-  }
-  if (benchRpm310Field == "b45" || benchRpm310Field == "all") {
-    frame.data[4] = benchRpm310Raw;
-    frame.data[5] = benchRpm310Raw;
-  }
-}
-
-const BenchReplayFrameDef* findFrameInBenchProfile(const BenchProfileDef* profile, uint16_t id) {
-  if (!profile) return nullptr;
-  for (size_t i = 0; i < profile->frameCount; i++) {
-    if (profile->frames[i].id == id) return &profile->frames[i];
-  }
-  return nullptr;
-}
-
-bool addBenchFrameOverride(const BenchReplayFrameDef& def, uint8_t mask = 0xFF, bool replaceDlc = true) {
-  if (benchFrameOverrideCount >= BENCH_FRAME_OVERRIDE_MAX) return false;
-
-  BenchFrameOverrideState& override = benchFrameOverrides[benchFrameOverrideCount++];
-  override.used = true;
-  override.id = def.id;
-  override.dlc = def.dlc;
-  override.mask = mask;
-  override.replaceDlc = replaceDlc;
-  for (uint8_t b = 0; b < def.dlc; b++) {
-    override.data[b] = def.data[b];
-  }
-  return true;
-}
-
-bool addPendingBenchByteOverride(const BenchReplayFrameDef* def,
-                                 uint8_t mask,
-                                 const BenchReplayFrameDef** defs,
-                                 uint8_t* masks,
-                                 uint8_t& count) {
-  if (!def || mask == 0) return false;
-  for (uint8_t i = 0; i < count; i++) {
-    if (defs[i] && defs[i]->id == def->id) {
-      masks[i] |= mask;
-      return true;
-    }
-  }
-  if (count >= BENCH_FRAME_OVERRIDE_MAX) return false;
-  defs[count] = def;
-  masks[count] = mask;
-  count++;
-  return true;
-}
-
-const BenchProfileDef* findBenchProfile(String mode) {
-  mode.trim();
-  mode.toLowerCase();
-  if (mode == "off" || mode == "zero") mode = "run0";
-  for (size_t i = 0; i < sizeof(BENCH_PROFILES) / sizeof(BENCH_PROFILES[0]); i++) {
-    if (mode == BENCH_PROFILES[i].mode) return &BENCH_PROFILES[i];
-  }
-  return nullptr;
-}
-
-const BenchSequenceProfileDef* findBenchSequenceProfile(String mode) {
-  mode.trim();
-  mode.toLowerCase();
-  for (size_t i = 0; i < sizeof(BENCH_SEQUENCE_PROFILES) / sizeof(BENCH_SEQUENCE_PROFILES[0]); i++) {
-    if (mode == BENCH_SEQUENCE_PROFILES[i].mode) return &BENCH_SEQUENCE_PROFILES[i];
-  }
-  return nullptr;
-}
-
-void appendBenchValidModes(String& packet) {
-  packet += "\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\",\"seqidle\",\"seqwheel\",\"stop\"";
-}
-
-void appendBenchReplayStatusJson(String& packet) {
-  const char* mode = "none";
-  uint16_t rpmHint = 0;
-  size_t frameCount = 0;
-  const char* replayKind = "none";
-  if (benchReplayKind == BenchReplayKind::Periodic && benchReplayProfile) {
-    mode = benchReplayProfile->mode;
-    rpmHint = benchReplayProfile->rpmHint;
-    frameCount = benchReplayProfile->frameCount;
-    replayKind = "periodic";
-  } else if (benchReplayKind == BenchReplayKind::Sequence && benchSequenceProfile) {
-    mode = benchSequenceProfile->mode;
-    rpmHint = benchSequenceProfile->rpmHint;
-    frameCount = benchSequenceProfile->frameCount;
-    replayKind = "sequence";
-  }
-
-  packet += "{\"bench_sender_enabled\":";
-  packet += CAN_BENCH_SENDER_ENABLED ? "true" : "false";
-  packet += ",\"active\":";
-  packet += benchReplayActive ? "true" : "false";
-  packet += ",\"mode\":\"";
-  packet += mode;
-  packet += "\",\"rpm_hint\":";
-  packet += String(rpmHint);
-  packet += ",\"frames_in_profile\":";
-  packet += String(frameCount);
-  packet += ",\"replay_kind\":\"";
-  packet += replayKind;
-  packet += "\"";
-  if (benchReplayKind == BenchReplayKind::Sequence && benchSequenceProfile) {
-    packet += ",\"sequence_duration_ms\":";
-    packet += String(benchSequenceProfile->durationMs);
-    packet += ",\"sequence_next_index\":";
-    packet += String(benchSequenceNextIndex);
-  }
-  packet += ",\"rpm310_override\":";
-  if (benchRpm310Override) {
-    packet += "{\"field\":\"";
-    packet += benchRpm310Field;
-    packet += "\",\"raw\":";
-    packet += String(benchRpm310Raw);
-    packet += ",\"rpm_hint\":";
-    packet += String(static_cast<uint16_t>(benchRpm310Raw) * 100U);
-    packet += "}";
-  } else {
-    packet += "false";
-  }
-  packet += ",\"frame_override\":";
-  if (benchFrameOverride) {
-    packet += "{\"id_hex\":\"0x";
-    packet += String(benchFrameOverrideId, HEX);
-    packet += "\",\"source\":\"";
-    packet += benchFrameOverrideSource;
-    packet += "\",\"dlc\":";
-    packet += String(benchFrameOverrideDlc);
-    packet += ",\"data_hex\":\"";
-    appendFrameDataHex(packet, benchFrameOverrideData, benchFrameOverrideDlc);
-    packet += "\"}";
-  } else {
-    packet += "false";
-  }
-  packet += ",\"frame_override_group\":\"";
-  packet += benchFrameOverrideGroup;
-  packet += "\",\"frame_override_count\":";
-  packet += String(benchFrameOverrideCount);
-  packet += ",\"frame_override_ids\":[";
-  for (uint8_t i = 0; i < benchFrameOverrideCount; i++) {
-    if (i > 0) packet += ",";
-    packet += "\"0x";
-    packet += String(benchFrameOverrides[i].id, HEX);
-    packet += "\"";
-  }
-  packet += "]";
-  packet += ",\"frame_override_masks\":[";
-  for (uint8_t i = 0; i < benchFrameOverrideCount; i++) {
-    if (i > 0) packet += ",";
-    packet += "{\"id_hex\":\"0x";
-    packet += String(benchFrameOverrides[i].id, HEX);
-    packet += "\",\"mask\":\"0x";
-    appendHexByte(packet, benchFrameOverrides[i].mask);
-    packet += "\"}";
-  }
-  packet += "]";
-  packet += ",\"normal_mode\":";
-  packet += benchReplayNormalMode ? "true" : "false";
-  packet += ",\"can_bitrate\":";
-  packet += String(CAN_BITRATE);
-  packet += ",\"uptime_ms\":";
-  packet += benchReplayActive ? String(millis() - benchReplayStartedMs) : "0";
-  packet += ",\"sent_frames\":";
-  packet += String(benchReplaySentFrames);
-  packet += ",\"failed_frames\":";
-  packet += String(benchReplayFailedFrames);
-  packet += ",\"tx_requests_total\":";
-  packet += String(txRequests);
-  if (canReady) {
-    packet += ",\"mcp_eflg\":\"0x";
-    appendHexByte(packet, can.errorFlags());
-    packet += "\",\"mcp_txb0ctrl\":\"0x";
-    appendHexByte(packet, can.txBuffer0Ctrl());
-    packet += "\",\"mcp_tec\":";
-    packet += String(can.txErrorCount());
-    packet += ",\"mcp_rec\":";
-    packet += String(can.rxErrorCount());
-  } else {
-    packet += ",\"mcp_eflg\":null,\"mcp_txb0ctrl\":null,\"mcp_tec\":null,\"mcp_rec\":null";
-  }
-  packet += ",\"valid_modes\":[";
-  appendBenchValidModes(packet);
-  packet += "]}";
-}
-
-bool startBenchReplay(const BenchProfileDef* profile) {
-  if (!CAN_BENCH_SENDER_ENABLED || !profile || profile->frameCount > BENCH_REPLAY_MAX_FRAMES || !canReady) {
-    return false;
-  }
-
-  bool normalReady = can.configure(false);
-  canReady = normalReady;
-  if (!normalReady) {
-    benchReplayNormalMode = false;
-    return false;
-  }
-
-  benchReplayProfile = profile;
-  benchSequenceProfile = nullptr;
-  clearBenchOverrides();
-  benchReplayStartedMs = millis();
-  benchReplaySentFrames = 0;
-  benchReplayFailedFrames = 0;
-  benchSequenceLoopStartedMs = benchReplayStartedMs;
-  benchSequenceNextIndex = 0;
-  benchReplayActive = true;
-  benchReplayNormalMode = true;
-  benchReplayKind = BenchReplayKind::Periodic;
-
-  uint32_t offsetMs = 0;
-  for (size_t i = 0; i < profile->frameCount; i++) {
-    benchReplayNextDueMs[i] = benchReplayStartedMs + offsetMs;
-    offsetMs += 2;
-  }
-  return true;
-}
-
-bool startBenchSequenceReplay(const BenchSequenceProfileDef* profile) {
-  if (!CAN_BENCH_SENDER_ENABLED || !profile || profile->frameCount == 0 || profile->durationMs == 0 || !canReady) {
-    return false;
-  }
-
-  bool normalReady = can.configure(false);
-  canReady = normalReady;
-  if (!normalReady) {
-    benchReplayNormalMode = false;
-    return false;
-  }
-
-  benchReplayProfile = nullptr;
-  benchSequenceProfile = profile;
-  clearBenchOverrides();
-  benchReplayStartedMs = millis();
-  benchReplaySentFrames = 0;
-  benchReplayFailedFrames = 0;
-  benchSequenceLoopStartedMs = benchReplayStartedMs;
-  benchSequenceNextIndex = 0;
-  benchReplayActive = true;
-  benchReplayNormalMode = true;
-  benchReplayKind = BenchReplayKind::Sequence;
-  return true;
-}
-
-bool stopBenchReplay() {
-  benchReplayActive = false;
-  benchReplayProfile = nullptr;
-  benchSequenceProfile = nullptr;
-  benchSequenceNextIndex = 0;
-  benchReplayKind = BenchReplayKind::None;
-  clearBenchOverrides();
-  benchReplayNormalMode = false;
-  if (!CAN_BENCH_SENDER_ENABLED || !canReady) return true;
-  bool restored = can.configure(CAN_LISTEN_ONLY);
-  canReady = restored;
-  return restored;
-}
-
-void maintainBenchReplay() {
-  if (!CAN_BENCH_SENDER_ENABLED || !benchReplayActive || !canReady) return;
-
-  if (!benchReplayNormalMode) {
-    benchReplayNormalMode = can.configure(false);
-    canReady = benchReplayNormalMode;
-    if (!benchReplayNormalMode) return;
-  }
-
-  uint32_t now = millis();
-  if (benchReplayKind == BenchReplayKind::Sequence && benchSequenceProfile) {
-    const uint32_t durationMs = benchSequenceProfile->durationMs;
-    uint32_t elapsedMs = now - benchSequenceLoopStartedMs;
-    if (elapsedMs >= durationMs) {
-      uint32_t loopsMissed = elapsedMs / durationMs;
-      benchSequenceLoopStartedMs += loopsMissed * durationMs;
-      elapsedMs = now - benchSequenceLoopStartedMs;
-      benchSequenceNextIndex = 0;
-    }
-
-    uint8_t sentThisTick = 0;
-    while (benchSequenceNextIndex < benchSequenceProfile->frameCount && sentThisTick < BENCH_SEQUENCE_MAX_SENDS_PER_TICK) {
-      const BenchSequenceFrameDef& def = benchSequenceProfile->frames[benchSequenceNextIndex];
-      if (def.offsetMs > elapsedMs) break;
-
-      CanFrame frame;
-      frame.id = def.id;
-      frame.extended = false;
-      frame.dlc = def.dlc;
-      for (uint8_t b = 0; b < def.dlc; b++) {
-        frame.data[b] = def.data[b];
-      }
-      applyBenchFrameOverride(frame);
-      applyBenchRpm310Override(frame);
-
-      if (can.sendFrame(frame)) {
-        benchReplaySentFrames++;
-      } else {
-        benchReplayFailedFrames++;
-      }
-      benchSequenceNextIndex++;
-      sentThisTick++;
-    }
-    return;
-  }
-
-  if (benchReplayKind != BenchReplayKind::Periodic || !benchReplayProfile) return;
-
-  for (size_t i = 0; i < benchReplayProfile->frameCount; i++) {
-    const BenchReplayFrameDef& def = benchReplayProfile->frames[i];
-    if (static_cast<int32_t>(now - benchReplayNextDueMs[i]) < 0) continue;
-
-    CanFrame frame;
-    frame.id = def.id;
-    frame.extended = false;
-    frame.dlc = def.dlc;
-    for (uint8_t b = 0; b < def.dlc; b++) {
-      frame.data[b] = def.data[b];
-    }
-    applyBenchFrameOverride(frame);
-    applyBenchRpm310Override(frame);
-
-    if (can.sendFrame(frame)) {
-      benchReplaySentFrames++;
-    } else {
-      benchReplayFailedFrames++;
-    }
-
-    uint32_t nextDue = benchReplayNextDueMs[i] + def.periodMs;
-    if (static_cast<int32_t>(now - nextDue) >= 0) {
-      nextDue = now + def.periodMs;
-    }
-    benchReplayNextDueMs[i] = nextDue;
   }
 }
 
@@ -2272,18 +1485,6 @@ float passiveTpsAbsPct(uint8_t raw) {
   return constrain(value, PASSIVE_TPS_IDLE_OBD_PCT, 100.0f);
 }
 
-float passiveCoolantC(int16_t raw) {
-  return PASSIVE_COOLANT_SCALE * static_cast<float>(raw) + PASSIVE_COOLANT_OFFSET;
-}
-
-float passiveIatC(uint8_t raw) {
-  return PASSIVE_IAT_SCALE * static_cast<float>(raw) + PASSIVE_IAT_OFFSET;
-}
-
-float passiveMapKpa(uint8_t raw) {
-  return static_cast<float>(raw) + PASSIVE_MAP_OFFSET_KPA;
-}
-
 float obdAbsTpsToGripPct(float absPct) {
   float value = (absPct - PASSIVE_TPS_IDLE_OBD_PCT) * 100.0f /
                 (100.0f - PASSIVE_TPS_IDLE_OBD_PCT);
@@ -2335,7 +1536,7 @@ void updateMockTelemetry() {
 
 String buildTelemetryPacket() {
   String packet;
-  packet.reserve(820);
+  packet.reserve(720);
   packet += "{\"seq\":";
   packet += String(++seqNo);
   packet += ",\"ms\":";
@@ -2344,21 +1545,6 @@ String buildTelemetryPacket() {
   appendFloat(packet, "rpm", telemetry.rpm, 1);
   appendFloat(packet, "speed_kph", telemetry.speed, 1);
   appendFloat(packet, "speed", telemetry.speed, 1);
-  packet += ",\"speed_source\":\"";
-  packet += hasPassiveSpeed ? "passive-can-0x30c" : "obd-or-mock";
-  packet += "\"";
-  packet += ",\"speed_raw\":";
-  if (hasPassiveSpeed) {
-    packet += String(lastPassiveSpeedRaw);
-  } else {
-    packet += "null";
-  }
-  packet += ",\"speed_age_ms\":";
-  if (hasPassiveSpeed) {
-    packet += String(millis() - lastPassiveSpeedMs);
-  } else {
-    packet += "null";
-  }
   packet += ",\"gear\":\"";
   packet += estimatedGear();
   packet += "\"";
@@ -2393,53 +1579,11 @@ String buildTelemetryPacket() {
   packet += ",\"tps_source\":\"";
   packet += hasPassiveTps ? "passive-can" : "obd-or-mock";
   packet += "\"";
-  packet += ",\"coolant_source\":\"";
-  packet += hasPassiveCoolant ? "passive-can-0x302" : "obd-or-mock";
-  packet += "\"";
-  packet += ",\"coolant_raw\":";
-  if (hasPassiveCoolant) {
-    packet += String(lastPassiveCoolantRaw);
-  } else {
-    packet += "null";
-  }
-  packet += ",\"iat_source\":\"";
-  packet += hasPassiveIat ? "passive-can-0x302" : "obd-or-mock";
-  packet += "\"";
-  packet += ",\"iat_raw\":";
-  if (hasPassiveIat) {
-    packet += String(lastPassiveIatRaw);
-  } else {
-    packet += "null";
-  }
-  packet += ",\"map_source\":\"";
-  packet += hasPassiveMap ? "passive-can-0x302" : "obd-or-mock";
-  packet += "\"";
-  packet += ",\"map_raw\":";
-  if (hasPassiveMap) {
-    packet += String(lastPassiveMapRaw);
-  } else {
-    packet += "null";
-  }
   appendFloat(packet, "battery_v", telemetry.vbatt, 2);
   appendFloat(packet, "vbatt", telemetry.vbatt, 2);
-  packet += ",\"battery_source\":\"";
-  packet += hasPassiveBattery ? "passive-can-0x303-candidate" : "obd-or-mock";
-  packet += "\"";
-  packet += ",\"battery_raw\":";
-  if (hasPassiveBattery) {
-    packet += String(lastPassiveBatteryRaw);
-  } else {
-    packet += "null";
-  }
-  packet += ",\"battery_age_ms\":";
-  if (hasPassiveBattery) {
-    packet += String(millis() - lastPassiveBatteryMs);
-  } else {
-    packet += "null";
-  }
 
   packet += ",\"source\":\"";
-  packet += WIFI_MOCK_TELEMETRY_ENABLED ? "esp32-mock" : "mcp2515-obd";
+  packet += WIFI_MOCK_TELEMETRY_ENABLED ? "esp32-mock" : FIRMWARE_VARIANT;
   packet += "\"";
   packet += ",\"can_ready\":";
   packet += canReady ? "true" : "false";
@@ -2516,46 +1660,6 @@ String buildCanLogPacket() {
     packet += "null";
   } else {
     packet += String(now - lastPassiveRpmMs);
-  }
-  appendFloat(packet, "decoded_speed_kph", telemetry.speed, 1);
-  packet += ",\"decoded_speed_raw\":";
-  if (!hasPassiveSpeed) {
-    packet += "null";
-  } else {
-    packet += String(lastPassiveSpeedRaw);
-  }
-  packet += ",\"decoded_speed_raw_hex\":";
-  if (!hasPassiveSpeed) {
-    packet += "null";
-  } else {
-    appendHexWord(packet, lastPassiveSpeedRaw);
-  }
-  packet += ",\"decoded_speed_age_ms\":";
-  if (!hasPassiveSpeed) {
-    packet += "null";
-  } else {
-    packet += String(now - lastPassiveSpeedMs);
-  }
-  appendFloat(packet, "decoded_battery_v", telemetry.vbatt, 2);
-  packet += ",\"decoded_battery_raw\":";
-  if (!hasPassiveBattery) {
-    packet += "null";
-  } else {
-    packet += String(lastPassiveBatteryRaw);
-  }
-  packet += ",\"decoded_battery_raw_hex\":";
-  if (!hasPassiveBattery) {
-    packet += "null";
-  } else {
-    packet += "\"0x";
-    appendHexByte(packet, lastPassiveBatteryRaw);
-    packet += "\"";
-  }
-  packet += ",\"decoded_battery_age_ms\":";
-  if (!hasPassiveBattery) {
-    packet += "null";
-  } else {
-    packet += String(now - lastPassiveBatteryMs);
   }
   packet += ",\"decoded_tps_raw\":";
   if (!hasPassiveTps) {
@@ -3002,6 +2106,22 @@ bool isPassiveRpmOffFrame(const CanFrame& frame, uint16_t rawRpm) {
   return false;
 }
 
+bool shouldAcceptPassiveRpm(float candidateRpm, uint32_t now) {
+  if (isnan(telemetry.rpm) || telemetry.rpm <= 0.0f) return true;
+  if (candidateRpm >= telemetry.rpm) return true;
+
+  // During rev tests, valid high RPM samples are interleaved with low raw
+  // samples from the same IDs. Hold the recent high value briefly so one
+  // stray low frame does not pull the tach down to half/idle.
+  uint32_t acceptedAgeMs = now - lastGoodResponseMs;
+  bool largeDrop = telemetry.rpm >= 2500.0f &&
+                   candidateRpm + 700.0f < telemetry.rpm &&
+                   candidateRpm < telemetry.rpm * 0.72f;
+  if (largeDrop && acceptedAgeMs < 450) return false;
+
+  return true;
+}
+
 void publishPassiveRpm(uint32_t frameId, uint16_t rawRpm, uint32_t now, float rpm) {
   hasPassiveRpm = true;
   lastPassiveRpmRaw = rawRpm;
@@ -3011,23 +2131,15 @@ void publishPassiveRpm(uint32_t frameId, uint16_t rawRpm, uint32_t now, float rp
   lastGoodResponseMs = now;
 }
 
-bool publishPassive301TachIfPaired(uint32_t now) {
-  if (!hasPassive301Tach || !hasPassive302RpmCompanion) return false;
-  if (now - lastPassive301TachMs > PASSIVE_RPM_PAIR_MAX_AGE_MS) return false;
-  if (now - lastPassive302RpmCompanionMs > PASSIVE_RPM_PAIR_MAX_AGE_MS) return false;
-
-  publishPassiveRpm(0x301, lastPassive301TachRaw, now,
-                    static_cast<float>(lastPassive301TachRaw) * PASSIVE_301_TACH_RPM_SCALE);
-  return true;
-}
-
 bool applyPassiveCanFrame(const CanFrame& frame) {
+  // OBD-polling variant deliberately ignores all passive decodes, so the
+  // dashboard reflects only active PID responses.
+  (void)frame;
+  return false;
+
   if (frame.extended) return false;
 
   uint32_t now = millis();
-
-  // Confirmed/high-confidence passive hex decodes. Keep this group separate
-  // from RPM experiments so bench validation can test known IDs first.
 
   // Finalized passive TPS: 0x301 byte 2 is rider throttle opening.
   // byte=0 means closed grip; byte=255 means fully open. For comparison with
@@ -3044,43 +2156,6 @@ bool applyPassiveCanFrame(const CanFrame& frame) {
     lastPassiveTpsMs = now;
     telemetry.tps = gripPct;
     telemetry.tpsAbs = absPct;
-
-    lastPassive301TachRaw = frame.data[0];
-    lastPassive301TachMs = now;
-    hasPassive301Tach = true;
-    if (publishPassive301TachIfPaired(now)) return true;
-  }
-
-  // High-confidence temperature/MAP group from OBD correlation:
-  // coolant = 0.099314 * signed_be16(bytes 0,1) + 2983.421676
-  // IAT = 0.095760 * byte 5 + 34.038803
-  // MAP ~= byte 6 + 1 kPa
-  if (frame.id == 0x302 && frame.dlc >= 7) {
-    int16_t coolantRaw = static_cast<int16_t>((static_cast<uint16_t>(frame.data[0]) << 8) |
-                                              frame.data[1]);
-    hasPassiveCoolant = true;
-    lastPassiveCoolantRaw = coolantRaw;
-    lastPassiveCoolantMs = now;
-    telemetry.coolant = passiveCoolantC(coolantRaw);
-
-    hasPassiveIat = true;
-    lastPassiveIatRaw = frame.data[5];
-    lastPassiveIatMs = now;
-    telemetry.iat = passiveIatC(frame.data[5]);
-
-    hasPassiveMap = true;
-    lastPassiveMapRaw = frame.data[6];
-    lastPassiveMapMs = now;
-    telemetry.map = passiveMapKpa(frame.data[6]);
-
-    if (frame.dlc >= 8) {
-      lastPassive302RpmB1 = frame.data[1];
-      lastPassive302RpmB3 = frame.data[3];
-      lastPassive302RpmB7 = frame.data[7];
-      lastPassive302RpmCompanionMs = now;
-      hasPassive302RpmCompanion = true;
-      if (publishPassive301TachIfPaired(now)) return true;
-    }
   }
 
   // Finalized passive gear: 0x447 byte 5 is 0=N, 1..6=gear number.
@@ -3090,43 +2165,14 @@ bool applyPassiveCanFrame(const CanFrame& frame) {
     lastPassiveGearMs = now;
   }
 
-  // Finalized passive speedometer: bench testing confirmed 0x30C bytes 0,1 as
-  // big-endian wheel-speed raw, with raw ~= displayed km/h * 118.
-  if (frame.id == 0x30C && frame.dlc >= 2) {
-    uint16_t rawSpeed = (static_cast<uint16_t>(frame.data[0]) << 8) | frame.data[1];
-    hasPassiveSpeed = true;
-    lastPassiveSpeedRaw = rawSpeed;
-    lastPassiveSpeedMs = now;
-    telemetry.speed = static_cast<float>(rawSpeed) / PASSIVE_30C_SPEED_KPH_SCALE;
-    lastGoodResponseMs = now;
-  }
-
-  // Candidate passive ECU/battery voltage. Correlation against OBD PID 0x42
-  // suggests 0x303 byte 1 carries voltage in 0.1 V units; keep the source
-  // labelled as candidate until checked against a multimeter across a wider
-  // battery range.
-  if (frame.id == 0x303 && frame.dlc >= 2) {
-    float volts = static_cast<float>(frame.data[1]) * PASSIVE_303_BATTERY_V_SCALE;
-    if (volts >= 9.0f && volts <= 16.5f) {
-      hasPassiveBattery = true;
-      lastPassiveBatteryRaw = frame.data[1];
-      lastPassiveBatteryMs = now;
-      telemetry.vbatt = volts;
-      lastGoodResponseMs = now;
-    }
-  }
-
   if (frame.dlc < 4) return false;
 
-  // Fallback only. Bench testing showed the cluster trusts 0x301 b0 plus
-  // 0x302 b1,b3,b7, not 0x310. Keep 0x310 for startup/off-state visibility
-  // when the paired 0x301/0x302 tach is not fresh yet.
+  // The cluster-style tach value appears on 0x310 bytes 4/5:
+  // engine off 0x00 = 0 rpm, idle 0x0F = ~1500 rpm, ~4k test 0x26 = ~3800 rpm.
   if (frame.id == 0x310 && frame.dlc >= 6 && frame.data[4] == frame.data[5]) {
     uint16_t rawRpm = frame.data[4];
-    if (!hasPassiveRpm || now - lastPassiveRpmMs > 250) {
-      publishPassiveRpm(frame.id, rawRpm, now, static_cast<float>(rawRpm) * PASSIVE_310_BUCKET_RPM_SCALE);
-      return true;
-    }
+    publishPassiveRpm(frame.id, rawRpm, now, static_cast<float>(rawRpm) * 100.0f);
+    return true;
   }
 
   // Observed on the Dominar live bus:
@@ -3144,17 +2190,44 @@ bool applyPassiveCanFrame(const CanFrame& frame) {
 
 void pollOnePid() {
   static size_t index = 0;
-  const PidRequest& req = PID_SCHEDULE[index];
-  index = (index + 1) % (sizeof(PID_SCHEDULE) / sizeof(PID_SCHEDULE[0]));
+  static uint32_t lastAttemptMs = 0;
+  uint32_t now = millis();
+  if (now - lastAttemptMs < PID_MIN_REQUEST_GAP_MS) return;
+
+  size_t pidCount = sizeof(PID_SCHEDULE) / sizeof(PID_SCHEDULE[0]);
+  PidRequest* req = nullptr;
+  for (size_t attempt = 0; attempt < pidCount; attempt++) {
+    PidRequest& candidate = PID_SCHEDULE[index];
+    index = (index + 1) % pidCount;
+    if (now - candidate.lastRequestMs >= candidate.intervalMs) {
+      req = &candidate;
+      break;
+    }
+  }
+  if (req == nullptr) return;
+
+  req->lastRequestMs = now;
+  lastAttemptMs = now;
 
   uint8_t b[5] = {0};
-  if (getPid(req.pid, b, req.neededBytes)) {
-    applyPid(req.pid, b);
+  if (getPid(req->pid, b, req->neededBytes)) {
+    applyPid(req->pid, b);
   }
 }
 
+void serviceObdPolling() {
+  static uint32_t lastPidPollMs = 0;
+  if (WIFI_MOCK_TELEMETRY_ENABLED || !canReady || !CAN_OBD_REQUESTS_ENABLED) return;
+
+  uint32_t now = millis();
+  if (now - lastPidPollMs < PID_INTERVAL_MS) return;
+
+  pollOnePid();
+  lastPidPollMs = millis();
+}
+
 void processPassiveCanFrames() {
-  if (!canReady || !CAN_LISTEN_ONLY) return;
+  if (!canReady) return;
 
   CanFrame frame;
   uint8_t drained = 0;
@@ -3237,6 +2310,7 @@ void handleTelemetryJson() {
   if (WIFI_MOCK_TELEMETRY_ENABLED) {
     updateMockTelemetry();
   } else {
+    serviceObdPolling();
     processPassiveCanFrames();
   }
   http.sendHeader("Cache-Control", "no-store");
@@ -3744,800 +2818,6 @@ void handleCorrelationDownload() {
   file.close();
 }
 
-void handleBenchProfile() {
-  String packet;
-  packet.reserve(900);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  String mode = http.hasArg("mode") ? http.arg("mode") : "idle";
-  mode.trim();
-  if (mode.equalsIgnoreCase("stop")) {
-    bool stopped = stopBenchReplay();
-    packet += "{\"ok\":";
-    packet += stopped ? "true" : "false";
-    if (!stopped) packet += ",\"error\":\"failed_to_restore_listen_only\"";
-    packet += ",\"status\":";
-    appendBenchReplayStatusJson(packet);
-    packet += "}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(stopped ? 200 : 500, "application/json", packet);
-    return;
-  }
-
-  const BenchProfileDef* profile = findBenchProfile(mode);
-  const BenchSequenceProfileDef* sequenceProfile = profile ? nullptr : findBenchSequenceProfile(mode);
-  if (!profile && !sequenceProfile) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":true,\"error\":\"unknown_profile\",\"valid_modes\":[";
-    appendBenchValidModes(packet);
-    packet += "]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  bool started = profile ? startBenchReplay(profile) : startBenchSequenceReplay(sequenceProfile);
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"profile_start_failed_check_can_ready\"";
-  }
-  packet += ",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchRpm310() {
-  String packet;
-  packet.reserve(1000);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  int raw = -1;
-  if (http.hasArg("raw")) {
-    raw = http.arg("raw").toInt();
-  } else if (http.hasArg("rpm")) {
-    int rpm = http.arg("rpm").toInt();
-    if (rpm >= 0) raw = (rpm + 50) / 100;
-  }
-
-  String field = http.hasArg("field") ? http.arg("field") : "b45";
-  field.trim();
-  field.toLowerCase();
-
-  if (raw < 0 || raw > 255 || !(field == "b45" || field == "b2" || field == "all")) {
-    packet += "{\"ok\":false,\"error\":\"bad_rpm310_args\",\"usage\":\"/bench/rpm310?rpm=2500&field=b45\",\"valid_fields\":[\"b45\",\"b2\",\"all\"]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchRpm310Override = true;
-    benchRpm310Raw = static_cast<uint8_t>(raw);
-    benchRpm310Field = field;
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"rpm310_start_failed_check_can_ready\"";
-  }
-  packet += ",\"requested_field\":\"";
-  packet += field;
-  packet += "\",\"requested_raw\":";
-  packet += String(raw);
-  packet += ",\"requested_rpm_hint\":";
-  packet += String(raw * 100);
-  packet += ",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchOverride() {
-  String packet;
-  packet.reserve(1200);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  uint32_t requestedId = 0x310;
-  if (http.hasArg("id") && !parseStandardCanId(http.arg("id"), requestedId)) {
-    packet += "{\"ok\":false,\"error\":\"bad_id\",\"usage\":\"/bench/override?id=0x310&profile=rpm4000\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint8_t overrideData[8] = {0};
-  uint8_t overrideDlc = 0;
-  String source = "";
-
-  if (http.hasArg("data")) {
-    if (!parseHexPayload(http.arg("data"), overrideData, overrideDlc)) {
-      packet += "{\"ok\":false,\"error\":\"bad_data\",\"usage\":\"/bench/override?id=0x310&data=00 00 19 00 2C 2C C0 00\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-    source = "data";
-  } else {
-    String profileName = http.hasArg("profile") ? http.arg("profile") : (http.hasArg("mode") ? http.arg("mode") : "rpm4000");
-    profileName.trim();
-    const BenchProfileDef* profile = findBenchProfile(profileName);
-    const BenchReplayFrameDef* def = findFrameInBenchProfile(profile, static_cast<uint16_t>(requestedId));
-    if (!profile || !def) {
-      packet += "{\"ok\":false,\"error\":\"profile_or_id_not_found\",\"usage\":\"/bench/override?id=0x310&profile=rpm4000\",\"valid_profiles\":[\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\"]}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(404, "application/json", packet);
-      return;
-    }
-    overrideDlc = def->dlc;
-    for (uint8_t b = 0; b < overrideDlc; b++) {
-      overrideData[b] = def->data[b];
-    }
-    source = profile->mode;
-  }
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchFrameOverride = true;
-    benchFrameOverrideId = static_cast<uint16_t>(requestedId);
-    benchFrameOverrideDlc = overrideDlc;
-    for (uint8_t b = 0; b < overrideDlc; b++) {
-      benchFrameOverrideData[b] = overrideData[b];
-    }
-    benchFrameOverrideSource = source;
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"override_start_failed_check_can_ready\"";
-  }
-  packet += ",\"requested_id_hex\":\"0x";
-  packet += String(requestedId, HEX);
-  packet += "\",\"source\":\"";
-  packet += source;
-  packet += "\",\"data_hex\":\"";
-  appendFrameDataHex(packet, overrideData, overrideDlc);
-  packet += "\",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchMix() {
-  String packet;
-  packet.reserve(1500);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  String profileName = http.hasArg("profile") ? http.arg("profile") : (http.hasArg("mode") ? http.arg("mode") : "rpm4000");
-  profileName.trim();
-  const BenchProfileDef* profile = findBenchProfile(profileName);
-  if (!profile) {
-    packet += "{\"ok\":false,\"error\":\"unknown_profile\",\"valid_profiles\":[\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\"]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint16_t ids[BENCH_FRAME_OVERRIDE_MAX] = {0};
-  uint8_t idCount = 0;
-  bool useAll = false;
-  String group = http.hasArg("group") ? http.arg("group") : "";
-  group.trim();
-  group.toLowerCase();
-
-  if (http.hasArg("ids")) {
-    group = "ids";
-    String idsArg = http.arg("ids");
-    idsArg.replace(";", ",");
-    idsArg.replace(" ", ",");
-    int start = 0;
-    while (start < idsArg.length()) {
-      int end = idsArg.indexOf(',', start);
-      if (end < 0) end = idsArg.length();
-      String token = idsArg.substring(start, end);
-      token.trim();
-      if (token.length() > 0) {
-        uint32_t parsedId = 0;
-        if (!parseStandardCanId(token, parsedId) || idCount >= BENCH_FRAME_OVERRIDE_MAX) {
-          packet += "{\"ok\":false,\"error\":\"bad_ids\",\"usage\":\"/bench/mix?profile=rpm4000&ids=0x301,0x310\"}";
-          http.sendHeader("Cache-Control", "no-store");
-          http.send(400, "application/json", packet);
-          return;
-        }
-        ids[idCount++] = static_cast<uint16_t>(parsedId);
-      }
-      start = end + 1;
-    }
-  } else {
-    if (group.length() == 0) group = "all";
-    if (group == "all") {
-      useAll = true;
-    } else if (group == "fast") {
-      const uint16_t preset[] = {0x301, 0x302, 0x310, 0x311, 0x312, 0x313, 0x540, 0x542};
-      idCount = sizeof(preset) / sizeof(preset[0]);
-      for (uint8_t i = 0; i < idCount; i++) ids[i] = preset[i];
-    } else if (group == "ecu") {
-      const uint16_t preset[] = {0x301, 0x302, 0x303, 0x304};
-      idCount = sizeof(preset) / sizeof(preset[0]);
-      for (uint8_t i = 0; i < idCount; i++) ids[i] = preset[i];
-    } else if (group == "chassis") {
-      const uint16_t preset[] = {0x310, 0x311, 0x312, 0x313, 0x540, 0x542};
-      idCount = sizeof(preset) / sizeof(preset[0]);
-      for (uint8_t i = 0; i < idCount; i++) ids[i] = preset[i];
-    } else if (group == "slow") {
-      const uint16_t preset[] = {0x30A, 0x30B, 0x30C, 0x314, 0x315, 0x316, 0x317, 0x318, 0x319, 0x447, 0x448, 0x500};
-      idCount = sizeof(preset) / sizeof(preset[0]);
-      for (uint8_t i = 0; i < idCount; i++) ids[i] = preset[i];
-    } else {
-      packet += "{\"ok\":false,\"error\":\"unknown_group\",\"valid_groups\":[\"all\",\"fast\",\"ecu\",\"chassis\",\"slow\"]}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-  }
-
-  if (!useAll && idCount == 0) {
-    packet += "{\"ok\":false,\"error\":\"empty_mix\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  if (!useAll) {
-    for (uint8_t i = 0; i < idCount; i++) {
-      if (!findFrameInBenchProfile(profile, ids[i])) {
-        packet += "{\"ok\":false,\"error\":\"id_not_found_in_profile\",\"id_hex\":\"0x";
-        packet += String(ids[i], HEX);
-        packet += "\"}";
-        http.sendHeader("Cache-Control", "no-store");
-        http.send(404, "application/json", packet);
-        return;
-      }
-    }
-  }
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchFrameOverrideSource = profile->mode;
-    benchFrameOverrideGroup = group;
-    benchFrameOverride = false;
-
-    if (useAll) {
-      for (size_t i = 0; i < profile->frameCount; i++) {
-        addBenchFrameOverride(profile->frames[i]);
-      }
-    } else {
-      for (uint8_t i = 0; i < idCount; i++) {
-        const BenchReplayFrameDef* def = findFrameInBenchProfile(profile, ids[i]);
-        if (def) addBenchFrameOverride(*def);
-      }
-    }
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"mix_start_failed_check_can_ready\"";
-  }
-  packet += ",\"source\":\"";
-  packet += profile->mode;
-  packet += "\",\"group\":\"";
-  packet += group;
-  packet += "\",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchMixBytes() {
-  String packet;
-  packet.reserve(1800);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  String profileName = http.hasArg("profile") ? http.arg("profile") : (http.hasArg("mode") ? http.arg("mode") : "rpm4000");
-  profileName.trim();
-  const BenchProfileDef* profile = findBenchProfile(profileName);
-  if (!profile) {
-    packet += "{\"ok\":false,\"error\":\"unknown_profile\",\"valid_profiles\":[\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\"]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  const BenchReplayFrameDef* pendingDefs[BENCH_FRAME_OVERRIDE_MAX] = {nullptr};
-  uint8_t pendingMasks[BENCH_FRAME_OVERRIDE_MAX] = {0};
-  uint8_t pendingCount = 0;
-
-  if (http.hasArg("id") || http.hasArg("bytes")) {
-    if (!http.hasArg("id") || !http.hasArg("bytes")) {
-      packet += "{\"ok\":false,\"error\":\"missing_id_or_bytes\",\"usage\":\"/bench/mixbytes?profile=rpm4000&id=0x302&bytes=1,3,7\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-
-    uint32_t requestedId = 0;
-    if (!parseStandardCanId(http.arg("id"), requestedId)) {
-      packet += "{\"ok\":false,\"error\":\"bad_id\",\"usage\":\"/bench/mixbytes?profile=rpm4000&id=0x302&bytes=1,3,7\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-
-    const BenchReplayFrameDef* def = findFrameInBenchProfile(profile, static_cast<uint16_t>(requestedId));
-    uint8_t mask = 0;
-    if (!def || !parseBenchByteMask(http.arg("bytes"), def->dlc, mask) ||
-        !addPendingBenchByteOverride(def, mask, pendingDefs, pendingMasks, pendingCount)) {
-      packet += "{\"ok\":false,\"error\":\"bad_id_or_bytes\",\"usage\":\"/bench/mixbytes?profile=rpm4000&id=0x302&bytes=1,3,7\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-  }
-
-  for (size_t i = 0; i < profile->frameCount; i++) {
-    String key = "b";
-    key += String(profile->frames[i].id, HEX);
-    key.toLowerCase();
-    if (!http.hasArg(key)) continue;
-
-    uint8_t mask = 0;
-    if (!parseBenchByteMask(http.arg(key), profile->frames[i].dlc, mask) ||
-        !addPendingBenchByteOverride(&profile->frames[i], mask, pendingDefs, pendingMasks, pendingCount)) {
-      packet += "{\"ok\":false,\"error\":\"bad_byte_mask\",\"arg\":\"";
-      packet += key;
-      packet += "\",\"usage\":\"/bench/mixbytes?profile=rpm4000&b301=all&b302=1,3,7\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-  }
-
-  if (pendingCount == 0) {
-    packet += "{\"ok\":false,\"error\":\"empty_mixbytes\",\"usage\":\"/bench/mixbytes?profile=rpm4000&b301=all&b302=1,3,7\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchFrameOverrideSource = profile->mode;
-    benchFrameOverrideGroup = "bytes";
-    benchFrameOverride = false;
-    for (uint8_t i = 0; i < pendingCount; i++) {
-      if (pendingDefs[i]) addBenchFrameOverride(*pendingDefs[i], pendingMasks[i], false);
-    }
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"mixbytes_start_failed_check_can_ready\"";
-  }
-  packet += ",\"source\":\"";
-  packet += profile->mode;
-  packet += "\",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchPatch() {
-  String packet;
-  packet.reserve(1800);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  if (!http.hasArg("id") || !http.hasArg("bytes") || !(http.hasArg("values") || http.hasArg("data"))) {
-    packet += "{\"ok\":false,\"error\":\"missing_args\",\"usage\":\"/bench/patch?id=0x312&bytes=2,3&values=4E20&profile=rpm4000&b302=1,3,7\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint32_t requestedId = 0;
-  if (!parseStandardCanId(http.arg("id"), requestedId)) {
-    packet += "{\"ok\":false,\"error\":\"bad_id\",\"usage\":\"/bench/patch?id=0x301&bytes=0&values=72\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  String profileName = http.hasArg("profile") ? http.arg("profile") : (http.hasArg("mode") ? http.arg("mode") : "rpm4000");
-  profileName.trim();
-  const BenchProfileDef* profile = findBenchProfile(profileName);
-  const BenchReplayFrameDef* def = findFrameInBenchProfile(profile, static_cast<uint16_t>(requestedId));
-  if (!profile || !def) {
-    packet += "{\"ok\":false,\"error\":\"profile_or_id_not_found\",\"valid_profiles\":[\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\"]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(404, "application/json", packet);
-    return;
-  }
-
-  uint8_t mask = 0;
-  if (!parseBenchByteMask(http.arg("bytes"), def->dlc, mask)) {
-    packet += "{\"ok\":false,\"error\":\"bad_bytes\",\"usage\":\"bytes can be all, 0, 2,3, 2-5, or 0x18\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint8_t values[8] = {0};
-  uint8_t valueCount = 0;
-  const String valueArg = http.hasArg("values") ? http.arg("values") : http.arg("data");
-  if (!parseHexPayload(valueArg, values, valueCount) || valueCount != countBenchMaskBytes(mask)) {
-    packet += "{\"ok\":false,\"error\":\"bad_values\",\"usage\":\"values must be hex bytes matching the byte count, e.g. values=72 or values=4E20\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  BenchReplayFrameDef patched = *def;
-  uint8_t valueIndex = 0;
-  for (uint8_t b = 0; b < patched.dlc; b++) {
-    if ((mask & static_cast<uint8_t>(1U << b)) == 0) continue;
-    patched.data[b] = values[valueIndex++];
-  }
-
-  uint8_t companionMask = 0;
-  const BenchReplayFrameDef* frame302 = nullptr;
-  if (http.hasArg("b302")) {
-    frame302 = findFrameInBenchProfile(profile, 0x302);
-    if (!frame302 || !parseBenchByteMask(http.arg("b302"), frame302->dlc, companionMask)) {
-      packet += "{\"ok\":false,\"error\":\"bad_b302_mask\",\"usage\":\"/bench/patch?id=0x301&bytes=0&values=72&b302=1,3,7\"}";
-      http.sendHeader("Cache-Control", "no-store");
-      http.send(400, "application/json", packet);
-      return;
-    }
-  }
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchFrameOverrideSource = profile->mode;
-    benchFrameOverrideGroup = "patch";
-    benchFrameOverride = false;
-    addBenchFrameOverride(patched, mask, false);
-    if (frame302 && companionMask != 0) {
-      addBenchFrameOverride(*frame302, companionMask, false);
-    }
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"patch_start_failed_check_can_ready\"";
-  }
-  packet += ",\"requested_id_hex\":\"0x";
-  packet += String(requestedId, HEX);
-  packet += "\",\"bytes_mask\":\"0x";
-  appendHexByte(packet, mask);
-  packet += "\",\"values_hex\":\"";
-  appendFrameDataHex(packet, values, valueCount);
-  packet += "\",\"patched_data_hex\":\"";
-  appendFrameDataHex(packet, patched.data, patched.dlc);
-  packet += "\",\"source\":\"";
-  packet += profile->mode;
-  if (companionMask != 0) {
-    packet += "\",\"b302_mask\":\"0x";
-    appendHexByte(packet, companionMask);
-  }
-  packet += "\",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchRpm301() {
-  String packet;
-  packet.reserve(1600);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  int raw = -1;
-  if (http.hasArg("raw")) {
-    raw = http.arg("raw").toInt();
-  } else if (http.hasArg("rpm")) {
-    int rpm = http.arg("rpm").toInt();
-    if (rpm >= 0) raw = (rpm + 20) / 40;
-  }
-
-  if (raw < 0 || raw > 255) {
-    packet += "{\"ok\":false,\"error\":\"bad_raw_or_rpm\",\"usage\":\"/bench/rpm301?raw=114&profile=rpm4000\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  String profileName = http.hasArg("profile") ? http.arg("profile") : (http.hasArg("companion") ? http.arg("companion") : "rpm4000");
-  profileName.trim();
-  const BenchProfileDef* profile = findBenchProfile(profileName);
-  const BenchReplayFrameDef* frame301 = findFrameInBenchProfile(profile, 0x301);
-  const BenchReplayFrameDef* frame302 = findFrameInBenchProfile(profile, 0x302);
-  if (!profile || !frame301 || !frame302) {
-    packet += "{\"ok\":false,\"error\":\"profile_missing_301_or_302\",\"valid_profiles\":[\"run0\",\"idle\",\"rpm2000\",\"rpm3000\",\"rpm4000\"]}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(404, "application/json", packet);
-    return;
-  }
-
-  String companionBytes = http.hasArg("b302") ? http.arg("b302") : "1,3,7";
-  uint8_t companionMask = 0;
-  if (!parseBenchByteMask(companionBytes, frame302->dlc, companionMask)) {
-    packet += "{\"ok\":false,\"error\":\"bad_b302_mask\",\"usage\":\"/bench/rpm301?raw=114&profile=rpm4000&b302=1,3,7\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  BenchReplayFrameDef patched301 = *frame301;
-  patched301.data[0] = static_cast<uint8_t>(raw);
-
-  const BenchSequenceProfileDef* sequenceProfile = findBenchSequenceProfile("seqidle");
-  bool started = startBenchSequenceReplay(sequenceProfile);
-  if (started) {
-    benchFrameOverrideSource = profile->mode;
-    benchFrameOverrideGroup = "rpm301";
-    benchFrameOverride = false;
-    addBenchFrameOverride(patched301, 0x01, false);
-    addBenchFrameOverride(*frame302, companionMask, false);
-  }
-
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"rpm301_start_failed_check_can_ready\"";
-  }
-  packet += ",\"requested_raw\":";
-  packet += String(raw);
-  packet += ",\"requested_hex\":\"0x";
-  appendHexByte(packet, static_cast<uint8_t>(raw));
-  packet += "\",\"cluster_rpm_hint\":";
-  packet += String(static_cast<uint16_t>(raw) * 40U);
-  packet += ",\"companion_source\":\"";
-  packet += profile->mode;
-  packet += "\",\"b302_mask\":\"0x";
-  appendHexByte(packet, companionMask);
-  packet += "\",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchStop() {
-  String packet;
-  packet.reserve(700);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  bool stopped = stopBenchReplay();
-  packet += "{\"ok\":";
-  packet += stopped ? "true" : "false";
-  if (!stopped) packet += ",\"error\":\"failed_to_restore_listen_only\"";
-  packet += ",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(stopped ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchStatus() {
-  maintainBenchReplay();
-  String packet;
-  packet.reserve(620);
-  appendBenchReplayStatusJson(packet);
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(200, "application/json", packet);
-}
-
-void handleBenchZero() {
-  String packet;
-  packet.reserve(900);
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += "{\"ok\":false,\"bench_sender_enabled\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  const BenchProfileDef* profile = findBenchProfile("run0");
-  bool started = startBenchReplay(profile);
-  packet += "{\"ok\":";
-  packet += started ? "true" : "false";
-  if (!started) {
-    packet += ",\"error\":\"zero_rpm_start_failed_check_can_ready\"";
-  }
-  packet += ",\"status\":";
-  appendBenchReplayStatusJson(packet);
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(started ? 200 : 500, "application/json", packet);
-}
-
-void handleBenchSendFrame() {
-  String packet;
-  packet.reserve(900);
-  packet += "{\"bench_sender_enabled\":";
-  packet += CAN_BENCH_SENDER_ENABLED ? "true" : "false";
-
-  if (!CAN_BENCH_SENDER_ENABLED) {
-    packet += ",\"ok\":false,\"error\":\"bench_sender_build_not_enabled\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(403, "application/json", packet);
-    return;
-  }
-
-  if (!http.hasArg("id") || !http.hasArg("data")) {
-    packet += ",\"ok\":false,\"error\":\"missing_id_or_data\",\"usage\":\"/bench/send?id=0x447&data=00 02 9C 63 00 01 54 84&repeat=20&gap_ms=20\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint32_t id = 0;
-  uint8_t data[8] = {0};
-  uint8_t dlc = 0;
-  bool idOk = parseStandardCanId(http.arg("id"), id);
-  bool dataOk = parseHexPayload(http.arg("data"), data, dlc);
-  if (!idOk || !dataOk) {
-    packet += ",\"ok\":false,\"error\":\"bad_id_or_data\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(400, "application/json", packet);
-    return;
-  }
-
-  uint16_t repeat = 1;
-  if (http.hasArg("repeat")) {
-    int requested = http.arg("repeat").toInt();
-    if (requested > 1) repeat = static_cast<uint16_t>(requested);
-  }
-  if (repeat > 200) repeat = 200;
-
-  uint16_t gapMs = 20;
-  if (http.hasArg("gap_ms")) {
-    int requested = http.arg("gap_ms").toInt();
-    if (requested >= 0) gapMs = static_cast<uint16_t>(requested);
-  }
-  if (gapMs > 250) gapMs = 250;
-
-  packet += ",\"id_hex\":\"0x";
-  packet += String(id, HEX);
-  packet += "\",\"data_hex\":\"";
-  appendFrameDataHex(packet, data, dlc);
-  packet += "\",\"dlc\":";
-  packet += String(dlc);
-  packet += ",\"repeat\":";
-  packet += String(repeat);
-  packet += ",\"gap_ms\":";
-  packet += String(gapMs);
-
-  if (!canReady) {
-    packet += ",\"ok\":false,\"error\":\"can_not_ready\"}";
-    http.sendHeader("Cache-Control", "no-store");
-    http.send(200, "application/json", packet);
-    return;
-  }
-
-  bool normalReady = can.configure(false);
-  benchReplayNormalMode = normalReady;
-  packet += ",\"normal_mode_ready\":";
-  packet += normalReady ? "true" : "false";
-
-  uint16_t sent = 0;
-  uint16_t failed = 0;
-  if (normalReady) {
-    CanFrame frame;
-    frame.id = id;
-    frame.extended = false;
-    frame.dlc = dlc;
-    for (uint8_t i = 0; i < dlc; i++) {
-      frame.data[i] = data[i];
-    }
-
-    for (uint16_t i = 0; i < repeat; i++) {
-      if (can.sendFrame(frame)) {
-        sent++;
-      } else {
-        failed++;
-      }
-      if (gapMs > 0 && i + 1 < repeat) delay(gapMs);
-      yield();
-    }
-  }
-
-  bool restored = true;
-  if (!benchReplayActive) {
-    restored = can.configure(CAN_LISTEN_ONLY);
-    canReady = restored;
-    benchReplayNormalMode = false;
-  }
-  packet += ",\"sent\":";
-  packet += String(sent);
-  packet += ",\"failed\":";
-  packet += String(failed);
-  packet += ",\"restored_listen_only\":";
-  packet += restored ? "true" : "false";
-  packet += ",\"bench_profile_active\":";
-  packet += benchReplayActive ? "true" : "false";
-  packet += ",\"tx_requests_total\":";
-  packet += String(txRequests);
-  packet += ",\"ok\":";
-  packet += (normalReady && sent > 0) ? "true" : "false";
-  packet += "}";
-
-  http.sendHeader("Cache-Control", "no-store");
-  http.send(200, "application/json", packet);
-}
-
 void handleHealth() {
   http.send(200, "text/plain", WIFI_MOCK_TELEMETRY_ENABLED ? "esp32 mock telemetry ok" : "esp32 can bridge ok");
 }
@@ -4554,13 +2834,14 @@ void handleEvents() {
 
   uint32_t lastSendMs = 0;
   while (client.connected()) {
-    maintainBenchReplay();
+    if (WIFI_MOCK_TELEMETRY_ENABLED) {
+      updateMockTelemetry();
+    } else {
+      serviceObdPolling();
+      processPassiveCanFrames();
+    }
+
     if (millis() - lastSendMs >= TELEMETRY_INTERVAL_MS) {
-      if (WIFI_MOCK_TELEMETRY_ENABLED) {
-        updateMockTelemetry();
-      } else {
-        processPassiveCanFrames();
-      }
       String packet = buildTelemetryPacket();
       client.print("data: ");
       client.print(packet);
@@ -4568,7 +2849,7 @@ void handleEvents() {
       client.flush();
       lastSendMs = millis();
     }
-    delay(2);
+    delay(1);
     yield();
   }
 }
@@ -4603,17 +2884,6 @@ void setupHttp() {
   http.on("/correlate/mark", handleCorrelationMark);
   http.on("/correlate/stop", handleCorrelationStop);
   http.on("/correlate/download", handleCorrelationDownload);
-  http.on("/bench/profile", handleBenchProfile);
-  http.on("/bench/rpm310", handleBenchRpm310);
-  http.on("/bench/override", handleBenchOverride);
-  http.on("/bench/mix", handleBenchMix);
-  http.on("/bench/mixbytes", handleBenchMixBytes);
-  http.on("/bench/patch", handleBenchPatch);
-  http.on("/bench/rpm301", handleBenchRpm301);
-  http.on("/bench/stop", handleBenchStop);
-  http.on("/bench/status", handleBenchStatus);
-  http.on("/bench/zero", handleBenchZero);
-  http.on("/bench/send", handleBenchSendFrame);
   http.on("/obd-rpm-test", handleObdRpmTest);
   http.on("/obd-log-test", handleObdLogTest);
   http.on("/health", handleHealth);
@@ -4640,11 +2910,6 @@ void setupHttp() {
   Serial.println("Simple test page: http://192.168.4.1/test");
   Serial.println("Passive capture page: http://192.168.4.1/capture");
   Serial.println("Passive + OBD correlation page: http://192.168.4.1/correlate");
-  if (CAN_BENCH_SENDER_ENABLED) {
-    Serial.println("Bench CAN sender: http://192.168.4.1/bench/send?id=0x447&data=00%2002%209C%2063%2000%2001%2054%2084&repeat=20");
-    Serial.println("Bench profile replay: http://192.168.4.1/bench/profile?mode=idle");
-    Serial.println("Bench zero-RPM replay: http://192.168.4.1/bench/zero");
-  }
 }
 
 void setupCan() {
@@ -4668,15 +2933,6 @@ void setupCan() {
                 CAN_LISTEN_ONLY ? "listen-only" : "normal OBD read-only requests");
 }
 
-void setupBenchAutostart() {
-  if (!BENCH_AUTOSTART_ZERO_RPM) return;
-
-  const BenchProfileDef* profile = findBenchProfile("run0");
-  bool started = startBenchReplay(profile);
-  Serial.print("Bench zero-RPM autostart: ");
-  Serial.println(started ? "running" : "failed");
-}
-
 void setup() {
   Serial.begin(115200);
   delay(1200);
@@ -4691,12 +2947,10 @@ void setup() {
     Serial.println("Wi-Fi mock telemetry mode enabled. CAN is not used in this build.");
   } else {
     setupCan();
-    setupBenchAutostart();
   }
 }
 
 void loop() {
-  static uint32_t lastPidPollMs = 0;
   static uint32_t lastTelemetryMs = 0;
 
   http.handleClient();
@@ -4705,12 +2959,7 @@ void loop() {
     updateMockTelemetry();
   }
 
-  if (canReady && CAN_OBD_REQUESTS_ENABLED && millis() - lastPidPollMs >= PID_INTERVAL_MS) {
-    pollOnePid();
-    lastPidPollMs = millis();
-  }
-
-  maintainBenchReplay();
+  serviceObdPolling();
   processPassiveCanFrames();
   maintainCapture();
   maintainCorrelation();
