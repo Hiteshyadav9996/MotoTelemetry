@@ -22,7 +22,8 @@ static void setupWiFi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP);
   WiFi.setSleep(false);
-  WiFi.softAP(D400_AP_SSID, D400_AP_PASS);
+  WiFi.softAP(D400_AP_SSID, D400_AP_PASS, D400_AP_CHANNEL, 0,
+              D400_AP_MAX_CONNECTIONS);
 
   if (MDNS.begin(D400_MDNS_HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);

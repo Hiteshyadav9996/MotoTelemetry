@@ -176,9 +176,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Join the phone to the D400Telemetry SoftAP (not an iPhone '
-              'hotspot). Disable Low Data Mode / Low Power Mode while riding, '
-              'and keep the app open so Wi‑Fi stays awake.',
+              'Join the phone to the D400Telemetry SoftAP in iOS Settings → Wi‑Fi '
+              '(not an iPhone hotspot). Disable Auto-Join on home/office Wi‑Fi '
+              'near the bike so iOS does not roam away. Android pins to the bridge '
+              'automatically while this app is open. Turn off Low Data Mode / Low '
+              'Power Mode while riding.',
               style: TextStyle(
                 color: DashboardTheme.muted.withValues(alpha: 0.95),
                 fontSize: 12,
