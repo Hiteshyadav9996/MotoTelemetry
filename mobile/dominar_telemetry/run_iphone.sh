@@ -45,7 +45,8 @@ flutter devices
 
 echo ""
 echo "=== Step 5: Run on iPhone ==="
-echo "Join D400Telemetry Wi-Fi on the phone, then:"
+echo "Plug the ESP32 into the Lightning camera adapter (USB Ethernet),"
+echo "or join D400Telemetry Wi-Fi, then:"
 echo "  flutter run"
 echo ""
 echo "Preview in Chrome (demo mode, no bike):"

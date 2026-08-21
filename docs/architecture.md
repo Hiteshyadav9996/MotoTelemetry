@@ -2,13 +2,23 @@
 
 ## Target data flow
 
+Current production ride path is Wi-Fi SoftAP + HTTP SSE. Wired USB Ethernet
+(NCM) is an alternate path that keeps the same SSE packets:
+
 ```text
 Bike ECU diagnostic port
   -> 6-pin adapter
-  -> ESP32 + CAN/K-Line transceiver
-  -> Wi-Fi UDP packets
-  -> iPhone app / laptop dashboard
+  -> ESP32-S3 TWAI + CJMCU-230
+  -> USB NCM (Ethernet gadget) 192.168.5.1   or   Wi-Fi SoftAP 192.168.4.1
+  -> HTTP SSE GET /events (binhex, 20 Hz)
+  -> iPhone Flutter app
 ```
+
+USB Ethernet leaves the iPhone Wi-Fi free for another phone hotspot (maps).
+DHCP on the ESP32 must not advertise a default gateway. See
+`docs/esp32_s3_usb_ncm_iphone.md`.
+
+Legacy lab sketches also broadcast JSON UDP on port 4210. Ride-minimal does not.
 
 ## Why not a cheap ELM327 clone?
 

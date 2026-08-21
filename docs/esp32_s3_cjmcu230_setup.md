@@ -68,6 +68,8 @@ Health: http://192.168.4.1/health.json
 
 This build is listen-only. It never transmits CAN frames onto the bike bus. Passive decode still uses IDs `0x301`, `0x302`, `0x303`, `0x30C`, and `0x447`.
 
+Wired USB Ethernet (NCM) for the iPhone is `d400-ride-usb-ncm`. Bench that path with `d400-ncm-bench` first. See `docs/esp32_s3_usb_ncm_iphone.md`.
+
 Legacy MCP2515 SPI sketches (`main.cpp`, `main_passive_only.cpp`, `main_obd_pid_only.cpp`) are unchanged. See `docs/esp32_s3_mcp2515_setup.md` for that wiring.
 
 ## Upload with PlatformIO

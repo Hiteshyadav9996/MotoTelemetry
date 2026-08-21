@@ -121,8 +121,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _KpiRow('Bridge', service.bridgeUrl),
               const SizedBox(height: 8),
               Text(
-                'SoftAP tip: keep Low Data Mode off and leave this app '
-                'foreground so iOS does not sleep Wi‑Fi on D400Telemetry.',
+                'USB tip: plug the ESP32 into the Lightning camera adapter. '
+                'Settings → Ethernet should show 192.168.5.x. Keep phone Wi‑Fi '
+                'on another hotspot (or cellular) for maps. Leave Router blank '
+                'on Ethernet if Maps traffic dies.',
                 style: TextStyle(
                   color: DashboardTheme.muted.withValues(alpha: 0.95),
                   fontSize: 11,
@@ -189,17 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
               style: const TextStyle(color: DashboardTheme.text),
               decoration: const InputDecoration(
                 labelText: 'ESP32 URL',
-                hintText: 'http://192.168.4.1',
+                hintText: 'http://192.168.5.1',
                 labelStyle: TextStyle(color: DashboardTheme.muted),
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'Join the phone to the D400Telemetry SoftAP in iOS Settings → Wi‑Fi '
-              '(not an iPhone hotspot). Disable Auto-Join on home/office Wi‑Fi '
-              'near the bike so iOS does not roam away. Android pins to the bridge '
-              'automatically while this app is open. Turn off Low Data Mode / Low '
-              'Power Mode while riding.',
+              'Wired: USB Ethernet at http://192.168.5.1 (camera adapter). '
+              'Join another phone hotspot or use cellular for Maps. If Ethernet '
+              'steals internet, set Ethernet IP to Manual and leave Router blank. '
+              'Wi-Fi fallback firmware still uses D400Telemetry at http://192.168.4.1.',
               style: TextStyle(
                 color: DashboardTheme.muted.withValues(alpha: 0.95),
                 fontSize: 12,

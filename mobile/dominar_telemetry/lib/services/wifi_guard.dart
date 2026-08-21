@@ -3,10 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Keeps the phone on the ESP32 SoftAP while telemetry is active.
+/// Optional SoftAP pin. Wired USB Ethernet is the default path; pinning is off
+/// so the phone can use another hotspot (or cellular) for maps.
 ///
-/// Android: requests and binds a dedicated Wi‑Fi network (no internet route).
-/// iOS: monitors Wi‑Fi reachability only — join D400Telemetry manually in Settings.
+/// Android: can bind a dedicated Wi‑Fi network (no internet route).
+/// iOS: cannot auto-join SoftAP without the Hotspot Configuration entitlement.
 class WifiGuard {
   WifiGuard({MethodChannel? channel})
       : _channel = channel ?? const MethodChannel(_channelName);

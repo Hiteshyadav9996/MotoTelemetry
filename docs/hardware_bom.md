@@ -25,7 +25,8 @@
 
 ## iPhone XR connection options
 
-1. **Wi-Fi from ESP32/Raspberry Pi to iPhone**: easiest and fast enough for a dashboard.
-2. **BLE**: clean for iOS, but usually lower throughput and more tuning work.
-3. **Wired Ethernet**: possible with Lightning-to-USB 3 Camera Adapter plus USB Ethernet or an MFi Lightning-to-Ethernet adapter; physically clunky but stable.
-4. **Direct custom Lightning serial**: not recommended for a hobby prototype because Apple MFi requirements apply.
+1. **Wi-Fi from ESP32 SoftAP to iPhone**: `d400-ride-minimal`, SSID `D400Telemetry`, `http://192.168.4.1`. Easiest. The phone joins the bike AP, so maps need cellular (iOS often fails that) or you skip navigation.
+2. **USB Ethernet (NCM) through Lightning camera adapter**: `d400-ncm-bench` then `d400-ride-usb-ncm`. App URL `http://192.168.5.1`. Fast and stable if iOS enumerates the gadget. Lightning iPhones often do **not**. See `docs/esp32_s3_usb_ncm_iphone.md`.
+3. **Lightning camera adapter + USB Ethernet dongle (ASIX/RTL8153) + W5500 on ESP32**: extra parts, but iOS USB Ethernet adapters are proven. Use this if NCM never appears under Settings → Ethernet.
+4. **BLE**: clean for iOS, lower throughput, not implemented.
+5. **Direct custom Lightning serial**: not recommended. Apple MFi is required; the Flutter app cannot open generic USB CDC.
