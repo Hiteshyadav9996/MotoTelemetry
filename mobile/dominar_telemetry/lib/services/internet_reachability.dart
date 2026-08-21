@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
-/// Quick check that the phone can reach Google (cellular or home Wi‑Fi).
-/// The ESP32 D400Telemetry AP has no internet — routes fail without cellular.
+/// Quick check that the phone can reach Google (cellular or a hotspot).
+/// USB Ethernet telemetry does not provide internet; Wi-Fi SoftAP neither.
 class InternetReachability {
   static const _probeUrls = [
     'https://www.google.com/generate_204',

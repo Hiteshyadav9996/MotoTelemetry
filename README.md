@@ -62,16 +62,28 @@ CSS variables under :root                    colors and theme
 
 ## Hardware path
 
-Current hardware path (ride-minimal):
+Current hardware path (ride-minimal Wi-Fi):
 
 ```text
 Bike 6-pin diagnostic port
 -> verified 6-pin-to-16-pin OBD adapter
 -> OBD2 male breakout or diagnostic CANH/CANL/GND
 -> ESP32-S3 TWAI + CJMCU-230 (SN65HVD230) transceiver
--> Wi-Fi SSE
+-> Wi-Fi SSE  http://192.168.4.1
 -> iPhone app
 ```
+
+Wired USB Ethernet (NCM) alternative, same SSE packets:
+
+```text
+same CAN path
+-> ESP32-S3 TinyUSB NCM gadget
+-> USB-A to USB-C + Lightning camera adapter
+-> iPhone Ethernet  http://192.168.5.1
+-> iPhone app (Wi-Fi free for another hotspot / maps)
+```
+
+See `docs/esp32_s3_usb_ncm_iphone.md`. Bench with `d400-ncm-bench` before riding `d400-ride-usb-ncm`. Lightning iPhones may not enumerate NCM.
 
 First power the ESP32 from USB only. Use the bike connector only for CAN-H, CAN-L, and ground during discovery. Add fused 12 V to 5 V bike power only after the CAN and Wi-Fi stream are stable.
 

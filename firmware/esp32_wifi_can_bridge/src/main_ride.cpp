@@ -12,12 +12,16 @@
 #include "sse_transport.h"
 #include "telemetry_format.h"
 #include "trip_computer.h"
+#if D400_USB_NCM
+#include "usb_ncm.h"
+#endif
 
 static WebServer gHttp(80);
 static uint32_t gSeqNo = 0;
 static uint32_t gLastTelemetryMs = 0;
 static uint32_t gLastBenchSseSkipped = 0;
 
+#if !D400_USB_NCM
 static void setupWiFi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP);
@@ -29,6 +33,26 @@ static void setupWiFi() {
     MDNS.addService("http", "tcp", 80);
   }
 }
+#endif
+
+static void setupNetwork() {
+#if D400_USB_NCM
+  if (!usb_ncm_start()) {
+    Serial.println("USB NCM start failed");
+  }
+  Serial.println("USB NCM dashboard: http://192.168.5.1");
+#else
+  setupWiFi();
+#endif
+}
+
+static uint8_t linkStationCount() {
+#if D400_USB_NCM
+  return usb_ncm_station_count();
+#else
+  return static_cast<uint8_t>(WiFi.softAPgetStationNum());
+#endif
+}
 
 static TelemetryPublishContext makePublishContext() {
   TelemetryPublishContext ctx;
@@ -36,7 +60,7 @@ static TelemetryPublishContext makePublishContext() {
   ctx.ms = millis();
   ctx.sseSkipped = sseSkippedFrames();
   ctx.sseDropped = sseDroppedClients();
-  ctx.softapStations = static_cast<uint8_t>(WiFi.softAPgetStationNum());
+  ctx.softapStations = linkStationCount();
   return ctx;
 }
 
@@ -115,17 +139,25 @@ static void setupHttp() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+#if D400_USB_NCM
+  Serial.println("D400 ride-minimal USB NCM boot");
+#else
   Serial.println("D400 ride-minimal binary boot");
+#endif
 
   setupOdometer();
   setupTrips();
-  setupWiFi();
+  setupNetwork();
   setupHttp();
   setupCanBridge();
 }
 
 void loop() {
   benchMarkLoopStart();
+
+#if D400_USB_NCM
+  usb_ncm_maintain();
+#endif
 
   gHttp.handleClient();
   sseMaintain();

@@ -4,12 +4,28 @@
 
 // Dominar 400 ESP32-S3 + CJMCU-230 (SN65HVD230) TWAI shared configuration.
 
+#ifndef D400_USB_NCM
+#define D400_USB_NCM 0
+#endif
+#ifndef D400_ENABLE_SOFTAP
+#define D400_ENABLE_SOFTAP (!D400_USB_NCM)
+#endif
+
 static const char* D400_AP_SSID = "D400Telemetry";
 static const char* D400_AP_PASS = "dominar400";
 static const char* D400_MDNS_HOSTNAME = "d400telemetry";
 static const int D400_AP_CHANNEL = 1;
 // One phone only — a second station steals airtime and breaks SSE throughput.
 static const int D400_AP_MAX_CONNECTIONS = 1;
+
+// USB NCM (Ethernet-over-USB) subnet. No default gateway is advertised so
+// iOS can keep Wi-Fi/cellular for maps.
+static const uint8_t D400_USB_IP_A = 192;
+static const uint8_t D400_USB_IP_B = 168;
+static const uint8_t D400_USB_IP_C = 5;
+static const uint8_t D400_USB_IP_D = 1;
+static const uint8_t D400_USB_DHCP_POOL_START = 2;
+static const uint8_t D400_USB_DHCP_POOL_END = 10;
 
 static const int D400_TWAI_TX_PIN = 4;  // CJMCU-230 CTX
 static const int D400_TWAI_RX_PIN = 5;  // CJMCU-230 CRX

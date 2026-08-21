@@ -7,7 +7,14 @@
 #include "bench_metrics.h"
 #include "d400_config.h"
 
-static WiFiClient sseClient;
+#if __has_include(<NetworkClient.h>)
+#include <NetworkClient.h>
+using SseNetClient = NetworkClient;
+#else
+using SseNetClient = WiFiClient;
+#endif
+
+static SseNetClient sseClient;
 static bool sseClientActive = false;
 static uint32_t sseLastSendMs = 0;
 static uint32_t sseLastAcceptedMs = 0;

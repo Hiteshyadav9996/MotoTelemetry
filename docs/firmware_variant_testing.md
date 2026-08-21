@@ -2,7 +2,9 @@
 
 This project now has these PlatformIO environments:
 
-- `d400-ride-minimal`: production ride firmware. ESP32-S3 **TWAI** + CJMCU-230 transceiver. See `docs/esp32_s3_cjmcu230_setup.md`.
+- `d400-ride-minimal`: production ride firmware. ESP32-S3 **TWAI** + CJMCU-230 transceiver over **Wi-Fi SoftAP**. See `docs/esp32_s3_cjmcu230_setup.md`.
+- `d400-ncm-bench`: USB Ethernet gadget go/no-go (`http://192.168.5.1/health.json`). See `docs/esp32_s3_usb_ncm_iphone.md`.
+- `d400-ride-usb-ncm`: same ride telemetry as `d400-ride-minimal`, over USB NCM instead of SoftAP. Flash only after the bench enumerates on the iPhone.
 - `esp32-s3-devkitc-1`: reference firmware from `src/main.cpp` (**MCP2515 SPI**)
 - `d400-passive-only`: passive CAN decode test from `src/main_passive_only.cpp` (**MCP2515 SPI**)
 - `d400-obd-polling`: active OBD PID polling test from `src/main_obd_pid_only.cpp` (**MCP2515 SPI**)
@@ -28,6 +30,34 @@ Validation:
 - `rx_frames` should increase on the bike
 - `can_rx_overflows` should stay flat after boot
 - RPM/speed/gear still decode from `0x301` / `0x30C` / `0x447`
+
+## USB NCM bench and ride
+
+Compile without the ESP32 plugged in. This folder name has a space, so IDF
+builds must go through the helper:
+
+```sh
+cd firmware/esp32_wifi_can_bridge
+./build_ncm.sh d400-ncm-bench
+```
+
+Flash with the board on the computer:
+
+```sh
+cd /tmp/d400-fw
+pio run -e d400-ncm-bench -t upload
+```
+
+Pass: iPhone **Settings → Ethernet** gets `192.168.5.x` and Safari loads
+`http://192.168.5.1/health.json`. Then:
+
+```sh
+cd /tmp/d400-fw
+pio run -e d400-ride-usb-ncm -t upload
+```
+
+After NCM firmware, reflash with BOOT held (USB CDC is gone). Full procedure:
+`docs/esp32_s3_usb_ncm_iphone.md`.
 
 ## Passive-only Build
 

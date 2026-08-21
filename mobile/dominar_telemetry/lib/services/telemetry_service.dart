@@ -10,14 +10,16 @@ import '../models/telemetry.dart';
 import 'ride_link_logger.dart';
 import 'wifi_guard.dart';
 
-/// Connects to the ESP32 ride-minimal bridge via binary SSE (`binhex:` on /events).
+/// Connects to the ESP32 ride bridge via binary SSE (`binhex:` on /events).
+/// Prefers USB Ethernet (`192.168.5.1`), then Wi-Fi SoftAP, then mDNS.
 /// Falls back to JSON SSE when connected to lab/legacy firmware.
 class TelemetryService extends ChangeNotifier {
   TelemetryService({RideLinkLogger? linkLogger, WifiGuard? wifiGuard})
       : _linkLogger = linkLogger ?? RideLinkLogger(),
         _wifiGuard = wifiGuard ?? WifiGuard();
 
-  static const defaultBridgeUrl = 'http://192.168.4.1';
+  static const defaultBridgeUrl = 'http://192.168.5.1';
+  static const wifiSoftApUrl = 'http://192.168.4.1';
   static const fallbackBridgeUrl = 'http://d400telemetry.local';
   static const bridgeUrlKey = 'bridge_url';
 
@@ -43,7 +45,7 @@ class TelemetryService extends ChangeNotifier {
   final RideLinkLogger _linkLogger;
   RideLinkLogger get linkLogger => _linkLogger;
 
-  final WifiGuard _wifiGuard;
+  final WifiGuard _wifiGuard; // kept for unpin on dispose; pinning is disabled
 
   Telemetry _telemetry = Telemetry.demo(elapsed: 0, seq: 0);
   Telemetry get telemetry => _telemetry;
@@ -279,37 +281,16 @@ class TelemetryService extends ChangeNotifier {
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(bridgeUrlKey);
-    // AP-only firmware: prefer 192.168.4.1; migrate old hotspot/mDNS default.
-    if (saved == null ||
-        saved == 'http://d400telemetry.local' ||
-        saved == fallbackBridgeUrl) {
+    if (saved == null || saved.isEmpty) {
       _bridgeUrl = defaultBridgeUrl;
     } else {
       _bridgeUrl = saved;
     }
     await _linkLogger.init();
-    _wifiGuard.onSsidDrift = _handleWifiDrift;
-    await _wifiGuard.pinSoftAp();
-    _wifiGuard.startWatching(shouldWatch: () => !_disposed);
+    // Wired-first: do not pin D400Telemetry. USB Ethernet carries telemetry so
+    // the phone Wi-Fi can stay on another hotspot (or cellular) for maps.
     _startWatchdog();
     await connect();
-  }
-
-  void _handleWifiDrift(String foreignSsid) {
-    _logLink('wifi_drift');
-    if (_connected) {
-      _status = 'Wrong Wi‑Fi · $foreignSsid · re-pinning ${WifiGuard.softApSsid}';
-      _notifyImmediate();
-    }
-    unawaited(_recoverAfterWifiDrift());
-  }
-
-  Future<void> _recoverAfterWifiDrift() async {
-    await _wifiGuard.pinSoftAp();
-    if (_disposed) return;
-    if (_connected) {
-      unawaited(connect());
-    }
   }
 
   Future<void> setBridgeUrl(String url) async {
@@ -360,6 +341,7 @@ class TelemetryService extends ChangeNotifier {
 
     add(_bridgeUrl);
     add(defaultBridgeUrl);
+    add(wifiSoftApUrl);
     add(fallbackBridgeUrl);
     return candidates;
   }
@@ -572,8 +554,6 @@ class TelemetryService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _wifiGuard.onSsidDrift = null;
-    _wifiGuard.stopWatching();
     unawaited(_wifiGuard.dispose());
     _stopDemo();
     _stopWatchdog();

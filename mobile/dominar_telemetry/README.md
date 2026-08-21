@@ -65,7 +65,7 @@ GOOGLE_MAPS_API_KEY=AIza_YOUR_REAL_IOS_KEY
 
 **"Network error while calculating route"** — common causes:
 
-1. **No internet while on bike Wi‑Fi** — `D400Telemetry` has no internet. Route calculation needs cellular (or home Wi‑Fi). Turn on **Settings → Cellular → Cellular Data** and allow data for Dominar Telemetry. Test navigation on home Wi‑Fi or LTE *before* joining the bike AP.
+1. **No internet on the telemetry link** — USB Ethernet and `D400Telemetry` Wi-Fi have no WAN. Route calculation needs cellular or another phone’s hotspot. On USB NCM, join that hotspot *and* keep Ethernet Router blank if Maps still fails.
 2. **Billing not linked** — Navigation SDK requires a billing account on the Google Cloud project (free tier still needs a card on file).
 3. **Wrong API key restriction** — For the native map + routing key, set **Application restrictions → iOS apps** with bundle ID `com.hitesh.dominarTelemetry`. Under **API restrictions**, allow only:
    - Navigation SDK
@@ -86,8 +86,8 @@ Tap the fullscreen button during navigation for a Google Maps–style full-width
 
 ### Connect to the bike
 
-1. Join the ESP32 AP: **D400Telemetry** (password: `dominar400`)
-2. Bridge default URL: `http://192.168.4.1`
+1. Plug ESP32 USB-C into the Lightning camera adapter (USB NCM) **or** join **D400Telemetry** (password: `dominar400`) for Wi-Fi firmware
+2. Bridge default URL: `http://192.168.5.1` (USB). Wi-Fi fallback: `http://192.168.4.1`
 3. Tap the status chip (top-left) to change the bridge URL if needed
 
 Telemetry streams via **Server-Sent Events** from `/events` — same protocol as the web dashboard.

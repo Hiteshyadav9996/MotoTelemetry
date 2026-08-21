@@ -1,0 +1,6 @@
+## TinyUSB NCM for d400-ncm-bench and d400-ride-usb-ncm (Arduino as IDF component).
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^1.4.4"
+  idf:
+    version: ">=5.1.0"
