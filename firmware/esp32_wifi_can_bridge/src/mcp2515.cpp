@@ -4,6 +4,15 @@
 
 #include "d400_config.h"
 
+// MCP2515 SPI wiring lives here so ride-minimal TWAI config can drop these pins.
+static const int D400_SPI_SCK_PIN = 12;
+static const int D400_SPI_MISO_PIN = 13;
+static const int D400_SPI_MOSI_PIN = 11;
+static const int D400_CAN_CS_PIN = 10;
+static const int D400_CAN_INT_PIN = 9;
+static const uint8_t D400_MCP_CLOCK_MHZ = 8;
+static const uint32_t D400_MCP_SPI_HZ = 8000000UL;
+
 Mcp2515 gCan;
 
 bool Mcp2515::begin() {
@@ -43,7 +52,7 @@ bool Mcp2515::configure(bool listenOnly) {
     return false;
   }
 
-  if (D400_MCP_FILTER_IMPORTANT_IDS_ONLY) {
+  if (D400_CAN_FILTER_IMPORTANT_IDS_ONLY) {
     configureImportantReceiveFilters();
   } else {
     writeRegister(RXB0CTRL, 0x64);

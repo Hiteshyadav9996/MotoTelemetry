@@ -1,6 +1,10 @@
 # ESP32-S3 + MCP2515 setup
 
-This setup matches the hardware currently on hand:
+This is the **legacy** MCP2515 SPI path used by the monolithic sketches (`main.cpp`, `main_passive_only.cpp`, `main_obd_pid_only.cpp`).
+
+The current ride-minimal hardware is ESP32-S3 TWAI plus a CJMCU-230 transceiver. See `docs/esp32_s3_cjmcu230_setup.md`.
+
+This setup matches the older hardware:
 
 - ESP32-S3-N16R8 dev board.
 - Blue MCP2515 + TJA1050 CAN module.

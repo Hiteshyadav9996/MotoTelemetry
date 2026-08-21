@@ -5,11 +5,11 @@
 
 bool gCanReady = false;
 uint32_t gDroppedCorruptFrames = 0;
-uint32_t gMcpRxOverflowEvents = 0;
-uint32_t gMcpReinitAttempts = 0;
-uint32_t gLastMcpRxOverflowMs = 0;
+uint32_t gCanRxOverflowEvents = 0;
+uint32_t gCanReinitAttempts = 0;
+uint32_t gLastCanRxOverflowMs = 0;
 
-static uint32_t lastMcpReinitMs = 0;
+static uint32_t lastCanReinitMs = 0;
 
 #ifdef D400_LAB_BUILD
 static const size_t CAN_RECENT_COUNT = 24;
@@ -96,7 +96,7 @@ bool isImportantFilteredStandardId(uint32_t id) {
 bool shouldDropCanFrame(const CanFrame& frame) {
   if (frame.dlc > 8) return true;
 
-  if (D400_MCP_FILTER_IMPORTANT_IDS_ONLY) {
+  if (D400_CAN_FILTER_IMPORTANT_IDS_ONLY) {
     if (D400_DROP_EXTENDED_FRAMES && frame.extended) return true;
     if (!frame.extended && !isImportantFilteredStandardId(frame.id)) return true;
   }
@@ -129,13 +129,11 @@ bool ingestCanFrame(const CanFrame& frame) {
   return applyPassiveCanFrame(frame);
 }
 
-void serviceMcpRxOverflows() {
+void serviceCanRxOverflows() {
   if (!gCanReady) return;
-  uint8_t overflowFlags = gCan.rxOverflowFlags();
-  if (overflowFlags == 0) return;
-  if (overflowFlags & 0x40) gMcpRxOverflowEvents++;
-  if (overflowFlags & 0x80) gMcpRxOverflowEvents++;
-  gLastMcpRxOverflowMs = millis();
+  if (gCan.rxOverflowFlags() == 0) return;
+  gCanRxOverflowEvents++;
+  gLastCanRxOverflowMs = millis();
   gCan.clearRxOverflowFlags();
 }
 
@@ -143,11 +141,11 @@ void maintainCanHealth() {
   if (!D400_CAN_LISTEN_ONLY) return;
 
   uint32_t now = millis();
-  if (now - lastMcpReinitMs < D400_CAN_REINIT_COOLDOWN_MS) return;
+  if (now - lastCanReinitMs < D400_CAN_REINIT_COOLDOWN_MS) return;
 
   if (!gCanReady) {
-    lastMcpReinitMs = now;
-    gMcpReinitAttempts++;
+    lastCanReinitMs = now;
+    gCanReinitAttempts++;
     gCanReady = gCan.begin() && gCan.configure(D400_CAN_LISTEN_ONLY);
     return;
   }
@@ -161,14 +159,20 @@ void maintainCanHealth() {
   }
   if (!stale) return;
 
-  lastMcpReinitMs = now;
-  gMcpReinitAttempts++;
+  lastCanReinitMs = now;
+  gCanReinitAttempts++;
   gCanReady = gCan.configure(D400_CAN_LISTEN_ONLY);
-  if (gCanReady) gLastMcpRxOverflowMs = 0;
+  if (gCanReady) gLastCanRxOverflowMs = 0;
 }
 
 void setupCanBridge() {
   gCanReady = gCan.begin() && gCan.configure(D400_CAN_LISTEN_ONLY);
+  Serial.printf("TWAI started: %lu bit/s, TX=GPIO%d RX=GPIO%d, mode=%s, ok=%u\n",
+                static_cast<unsigned long>(D400_CAN_BITRATE),
+                D400_TWAI_TX_PIN,
+                D400_TWAI_RX_PIN,
+                D400_CAN_LISTEN_ONLY ? "listen-only" : "normal",
+                gCanReady ? 1 : 0);
 }
 
 void processCanFrames() {
@@ -185,6 +189,6 @@ void processCanFrames() {
     drained++;
   }
 
-  serviceMcpRxOverflows();
+  serviceCanRxOverflows();
   maintainCanHealth();
 }

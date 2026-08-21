@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-// Dominar 400 ESP32-S3 + MCP2515 shared configuration.
+// Dominar 400 ESP32-S3 + CJMCU-230 (SN65HVD230) TWAI shared configuration.
 
 static const char* D400_AP_SSID = "D400Telemetry";
 static const char* D400_AP_PASS = "dominar400";
@@ -11,17 +11,13 @@ static const int D400_AP_CHANNEL = 1;
 // One phone only — a second station steals airtime and breaks SSE throughput.
 static const int D400_AP_MAX_CONNECTIONS = 1;
 
-static const int D400_SPI_SCK_PIN = 12;
-static const int D400_SPI_MISO_PIN = 13;
-static const int D400_SPI_MOSI_PIN = 11;
-static const int D400_CAN_CS_PIN = 10;
-static const int D400_CAN_INT_PIN = 9;
+static const int D400_TWAI_TX_PIN = 4;  // CJMCU-230 CTX
+static const int D400_TWAI_RX_PIN = 5;  // CJMCU-230 CRX
+static const uint32_t D400_TWAI_RX_QUEUE_LEN = 32;
 
-static const uint8_t D400_MCP_CLOCK_MHZ = 8;
-static const uint32_t D400_MCP_SPI_HZ = 8000000UL;
 static const uint32_t D400_CAN_BITRATE = 500000;
 static const bool D400_CAN_LISTEN_ONLY = true;
-static const bool D400_MCP_FILTER_IMPORTANT_IDS_ONLY = true;
+static const bool D400_CAN_FILTER_IMPORTANT_IDS_ONLY = true;
 static const bool D400_DROP_EXTENDED_FRAMES = true;
 
 static const uint32_t D400_TELEMETRY_INTERVAL_MS = 50;
@@ -35,7 +31,7 @@ static const size_t D400_SSE_FRAME_BUF_MAX = 256;
 static const size_t D400_RIDE_TELEMETRY_BINARY_SIZE = 78;
 static const size_t D400_BINARY_HEX_LINE_MAX = 168;  // "binhex:" + 78*2 + NUL
 
-static const uint32_t D400_ODOMETER_INITIAL_METERS = 53988UL * 1000UL;
+static const uint32_t D400_ODOMETER_INITIAL_METERS = 54521UL * 1000UL;
 static const uint32_t D400_ODOMETER_SAVE_DISTANCE_METERS = 100;
 static const uint32_t D400_ODOMETER_SAVE_INTERVAL_MS = 30000;
 static const uint32_t D400_ODOMETER_SPEED_MAX_AGE_MS = 500;

@@ -1,18 +1,18 @@
 #pragma once
 
 #include "can_types.h"
-#include "mcp2515.h"
+#include "twai_can.h"
 
 extern bool gCanReady;
 extern uint32_t gDroppedCorruptFrames;
-extern uint32_t gMcpRxOverflowEvents;
-extern uint32_t gMcpReinitAttempts;
-extern uint32_t gLastMcpRxOverflowMs;
+extern uint32_t gCanRxOverflowEvents;
+extern uint32_t gCanReinitAttempts;
+extern uint32_t gLastCanRxOverflowMs;
 
 void setupCanBridge();
 void processCanFrames();
 void maintainCanHealth();
-void serviceMcpRxOverflows();
+void serviceCanRxOverflows();
 
 bool isImportantFilteredStandardId(uint32_t id);
 bool shouldDropCanFrame(const CanFrame& frame);
