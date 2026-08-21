@@ -12,7 +12,8 @@
 ## Faster custom bridge for CAN bikes
 
 - ESP32 DevKit or ESP32-S3 board.
-- ISO 11898-2 high-speed CAN transceiver/controller module. The current bench setup uses an MCP2515 + TJA1050 SPI CAN module.
+- ISO 11898-2 high-speed CAN transceiver. The current ride setup uses a CJMCU-230 (SN65HVD230) 3.3 V transceiver on the ESP32-S3 built-in TWAI controller. See `docs/esp32_s3_cjmcu230_setup.md`.
+- Legacy bench sketches still support an MCP2515 + TJA1050 SPI CAN module. See `docs/esp32_s3_mcp2515_setup.md`.
 - Optional: CANable/CANtact/USB-CAN adapter for laptop sniffing.
 - Optional: small oscilloscope or logic analyzer.
 

@@ -62,20 +62,20 @@ CSS variables under :root                    colors and theme
 
 ## Hardware path
 
-Current hardware path:
+Current hardware path (ride-minimal):
 
 ```text
 Bike 6-pin diagnostic port
 -> verified 6-pin-to-16-pin OBD adapter
 -> OBD2 male breakout or diagnostic CANH/CANL/GND
--> ESP32-S3 + MCP2515/TJA1050 CAN module
--> Wi-Fi UDP
--> laptop dashboard first, then iPhone app
+-> ESP32-S3 TWAI + CJMCU-230 (SN65HVD230) transceiver
+-> Wi-Fi SSE
+-> iPhone app
 ```
 
 First power the ESP32 from USB only. Use the bike connector only for CAN-H, CAN-L, and ground during discovery. Add fused 12 V to 5 V bike power only after the CAN and Wi-Fi stream are stable.
 
-For the current ESP32-S3 + MCP2515 wiring and upload checklist, see `docs/esp32_s3_mcp2515_setup.md`.
+For the current ESP32-S3 + CJMCU-230 wiring and upload checklist, see `docs/esp32_s3_cjmcu230_setup.md`. The older MCP2515 SPI sketches are documented in `docs/esp32_s3_mcp2515_setup.md`.
 
 ## Data packet format
 

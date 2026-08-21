@@ -5,7 +5,6 @@
 
 #include "can_ingest.h"
 #include "d400_config.h"
-#include "mcp2515.h"
 #include "passive_decode.h"
 #include "trip_computer.h"
 
@@ -15,19 +14,18 @@ size_t formatHealthJson(char* buf, size_t cap) {
 
   int n = snprintf(buf, cap,
                    "{\"ms\":%lu,\"can_ready\":%s,\"can_bitrate\":%lu,"
-                   "\"mcp_spi_hz\":%lu,\"rx_frames\":%lu,\"dropped_corrupt_frames\":%lu,"
-                   "\"mcp_rx_overflows\":%lu,\"mcp_reinit_attempts\":%lu,"
+                   "\"controller\":\"twai\",\"rx_frames\":%lu,\"dropped_corrupt_frames\":%lu,"
+                   "\"can_rx_overflows\":%lu,\"can_reinit_attempts\":%lu,"
                    "\"last_can_age_ms\":%lu,\"link_quality_pct\":%u,"
                    "\"odometer_m\":%lu,\"odometer_save_count\":%lu,"
                    "\"trip_prefs_ready\":%s,\"transport\":\"binary\"}",
                    static_cast<unsigned long>(now),
                    gCanReady ? "true" : "false",
                    static_cast<unsigned long>(D400_CAN_BITRATE),
-                   static_cast<unsigned long>(D400_MCP_SPI_HZ),
                    static_cast<unsigned long>(gCan.rxFrameCount()),
                    static_cast<unsigned long>(gDroppedCorruptFrames),
-                   static_cast<unsigned long>(gMcpRxOverflowEvents),
-                   static_cast<unsigned long>(gMcpReinitAttempts),
+                   static_cast<unsigned long>(gCanRxOverflowEvents),
+                   static_cast<unsigned long>(gCanReinitAttempts),
                    static_cast<unsigned long>(lastCanAge),
                    static_cast<unsigned>(lastCanAge < 200 ? 100 : lastCanAge < 500 ? 75 :
                                                               lastCanAge < 1000 ? 35 : 0),

@@ -1,11 +1,33 @@
 # Firmware Variant Testing
 
-This project now has four PlatformIO environments:
+This project now has these PlatformIO environments:
 
-- `esp32-s3-devkitc-1`: current/reference firmware from `src/main.cpp`
-- `d400-passive-only`: passive CAN decode test from `src/main_passive_only.cpp`
-- `d400-obd-polling`: active OBD PID polling test from `src/main_obd_pid_only.cpp`
-- `d400-bench-sender`: isolated odometer/cluster bench sender from `src/main.cpp`
+- `d400-ride-minimal`: production ride firmware. ESP32-S3 **TWAI** + CJMCU-230 transceiver. See `docs/esp32_s3_cjmcu230_setup.md`.
+- `esp32-s3-devkitc-1`: reference firmware from `src/main.cpp` (**MCP2515 SPI**)
+- `d400-passive-only`: passive CAN decode test from `src/main_passive_only.cpp` (**MCP2515 SPI**)
+- `d400-obd-polling`: active OBD PID polling test from `src/main_obd_pid_only.cpp` (**MCP2515 SPI**)
+- `d400-bench-sender`: isolated odometer/cluster bench sender from `src/main.cpp` (**MCP2515 SPI**)
+
+Ride-minimal is the only environment wired for CJMCU-230. The MCP2515 sketches still expect the blue SPI module.
+
+## Ride-minimal (TWAI + CJMCU-230)
+
+Flash:
+
+```sh
+cd firmware/esp32_wifi_can_bridge
+pio run -e d400-ride-minimal -t upload
+```
+
+Serial should show `TWAI started: 500000 bit/s, TX=GPIO4 RX=GPIO5, mode=listen-only, ok=1`.
+
+Validation:
+
+- `/health.json` `controller` should be `twai`
+- `tx` stays off; this build is listen-only
+- `rx_frames` should increase on the bike
+- `can_rx_overflows` should stay flat after boot
+- RPM/speed/gear still decode from `0x301` / `0x30C` / `0x447`
 
 ## Passive-only Build
 

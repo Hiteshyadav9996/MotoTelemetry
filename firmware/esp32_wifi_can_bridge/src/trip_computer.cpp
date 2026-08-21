@@ -81,14 +81,18 @@ void setupOdometer() {
   if (!gOdometerPrefsReady) return;
 
   bool hadStoredValue = gOdometerPrefs.isKey(D400_ODOMETER_PREF_METERS_KEY);
-  odometerMeters = hadStoredValue
-                       ? gOdometerPrefs.getUInt(D400_ODOMETER_PREF_METERS_KEY, D400_ODOMETER_INITIAL_METERS)
-                       : D400_ODOMETER_INITIAL_METERS;
+  uint32_t storedMeters = hadStoredValue
+                              ? gOdometerPrefs.getUInt(D400_ODOMETER_PREF_METERS_KEY,
+                                                       D400_ODOMETER_INITIAL_METERS)
+                              : D400_ODOMETER_INITIAL_METERS;
+  odometerMeters = storedMeters < D400_ODOMETER_INITIAL_METERS
+                       ? D400_ODOMETER_INITIAL_METERS
+                       : storedMeters;
   odometerLastSavedMeters = odometerMeters;
   odometerLastSaveMs = millis();
   odometerFractionMeters = 0.0f;
 
-  if (!hadStoredValue) {
+  if (!hadStoredValue || odometerMeters != storedMeters) {
     saveOdometer(true);
   }
 }
