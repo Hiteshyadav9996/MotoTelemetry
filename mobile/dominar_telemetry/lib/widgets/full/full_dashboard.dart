@@ -333,17 +333,6 @@ class _FrameBackgroundPainter extends CustomPainter {
         ),
     );
 
-    final sheen = Path()
-      ..moveTo(478, 0)
-      ..lineTo(628, 0)
-      ..lineTo(522, size.height)
-      ..lineTo(372, size.height)
-      ..close();
-    canvas.drawPath(
-      sheen,
-      Paint()..color = Colors.white.withValues(alpha: 0.04),
-    );
-
     final stripePaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.012)
       ..strokeWidth = 1;

@@ -348,18 +348,14 @@ class _RpmArcPainter extends CustomPainter {
 
     final distance = (rpmK - mark).abs();
     final intensity = _quantize((1 - distance).clamp(0.0, 1.0));
-    final nearGlow =
-        _quantize((1 - distance / 1.35).clamp(0.0, 1.0));
     final isHighlighted = intensity > 0.02;
     final hue = DashboardTheme.rpmHueFor(mark.toDouble());
     final color = _isAlert
         ? const Color(0xFFFF302B).withValues(alpha: alertOpacity)
-        : isHighlighted
-            ? HSLColor.fromAHSL(1, hue, 0.96, 0.58)
-                .toColor()
-                .withValues(alpha: 0.42 + intensity * 0.58)
-            : DashboardTheme.text.withValues(alpha: 0.26 + nearGlow * 0.18);
-    final fontSize = 22.0 + pow(intensity, 1.15) * 44;
+        : HSLColor.fromAHSL(1, hue, 0.96, 0.58).toColor();
+    const peakFontSize = 66.0;
+    final sizeIntensity = pow(intensity, 1.15);
+    final fontSize = peakFontSize * (0.90 + 0.10 * sizeIntensity);
     final outlineWidth = _isAlert ? 1.75 : 0.75 + intensity * 1.35;
     final outlineAlpha =
         _isAlert ? 0.9 * alertOpacity : 0.22 + intensity * 0.68;
