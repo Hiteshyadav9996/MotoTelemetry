@@ -364,22 +364,16 @@ class _RpmVerticalPainter extends CustomPainter {
     final y = tangent.position.dy;
     final anchorX = _numberAnchorX(y, mark);
 
-    final activeMark = _activeRpmMark(rpmK);
-    final isActive = mark == activeMark;
     final distance = (rpmK - mark).abs();
-    final intensity = isActive ? 1.0 : 0.0;
-    final nearGlow =
-        isActive ? 0.0 : _quantize((1 - distance / 1.35).clamp(0.0, 1.0));
-    final isHighlighted = isActive;
+    final intensity = _quantize((1 - distance).clamp(0.0, 1.0));
+    final isHighlighted = intensity > 0.02;
     final hue = DashboardTheme.rpmHueFor(mark.toDouble());
     final color = _isAlert
         ? const Color(0xFFFF302B).withValues(alpha: alertOpacity)
-        : isHighlighted
-            ? HSLColor.fromAHSL(1, hue, 0.96, 0.58)
-                .toColor()
-                .withValues(alpha: 0.42 + intensity * 0.58)
-            : DashboardTheme.text.withValues(alpha: 0.26 + nearGlow * 0.18);
-    final fontSize = isActive ? 66.0 : 22.0 + nearGlow * 12;
+        : HSLColor.fromAHSL(1, hue, 0.96, 0.58).toColor();
+    const peakFontSize = 66.0;
+    final sizeIntensity = pow(intensity, 1.15);
+    final fontSize = peakFontSize * (0.90 + 0.10 * sizeIntensity);
     final outlineWidth = _isAlert ? 1.75 : 0.75 + intensity * 1.35;
     final outlineAlpha =
         _isAlert ? 0.9 * alertOpacity : 0.22 + intensity * 0.68;
@@ -428,13 +422,6 @@ class _RpmVerticalPainter extends CustomPainter {
   }
 
   double _quantize(double value) => (value * 20).round() / 20;
-
-  /// Single highlighted thousand-digit with 500 RPM handoff (e.g. 2 until 2500, 3 from 2501).
-  int _activeRpmMark(double rpmK) {
-    final rpmVal = rpmK * 1000;
-    if (rpmVal <= 500) return 0;
-    return (((rpmVal - 501) / 1000).floor() + 1).clamp(0, 10);
-  }
 
   @override
   bool shouldRepaint(covariant _RpmVerticalPainter oldDelegate) =>

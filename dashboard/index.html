@@ -98,9 +98,7 @@
       inset: 0;
       z-index: 20;
       pointer-events: none;
-      background:
-        linear-gradient(118deg, transparent 0 43%, rgba(255,255,255,0.045) 43.4% 56%, transparent 56.4%),
-        repeating-linear-gradient(90deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 5px);
+      background: repeating-linear-gradient(90deg, rgba(255,255,255,0.014) 0 1px, transparent 1px 5px);
     }
 
     .rpm-stage {
@@ -169,17 +167,18 @@
       letter-spacing: 0;
       text-anchor: middle;
       dominant-baseline: central;
-      fill: rgba(245,243,234,0.32);
+      font-size: 59.4px;
+      fill: hsl(var(--hue, 48), 96%, 58%);
       stroke: rgba(255,255,255,0.22);
       stroke-width: 0.75px;
       paint-order: stroke fill;
-      filter: blur(1.7px);
+      filter: none;
       transition: fill 70ms linear, font-size 70ms linear, filter 70ms linear, stroke 70ms linear, stroke-width 70ms linear, text-shadow 70ms linear;
     }
 
     .rpm-number.active {
       fill: hsl(var(--hue), 96%, 58%);
-      filter: blur(0);
+      filter: none;
       text-shadow: 0 0 18px hsla(var(--hue), 100%, 55%, 0.75);
     }
 
@@ -883,16 +882,13 @@
         const { node, mark, hue } = entry;
         const distance = Math.abs(rpmK - mark);
         const intensity = Math.round(clamp(1 - distance, 0, 1) * steps) / steps;
-        const nearGlow = Math.round(clamp(1 - distance / 1.35, 0, 1) * steps) / steps;
         const isHighlighted = intensity > 0.02;
-        const key = `${intensity}:${nearGlow}`;
+        const key = `${intensity}`;
         if (entry.key === key) return;
         entry.key = key;
 
-        const alpha = isHighlighted ? 0.42 + intensity * 0.58 : 0.26 + nearGlow * 0.18;
         const sizeIntensity = Math.pow(intensity, 1.15);
-        const fontSize = 22 + sizeIntensity * 44;
-        const blur = 1.7 * (1 - intensity);
+        const fontSize = 66 * (0.90 + 0.10 * sizeIntensity);
         const glow = 6 + intensity * 14;
         const glowAlpha = 0.28 + intensity * 0.48;
         const outlineAlpha = 0.22 + intensity * 0.68;
@@ -901,12 +897,10 @@
         node.classList.toggle("active", isHighlighted);
         node.style.setProperty("--hue", hue.toFixed(1));
         node.style.fontSize = `${fontSize.toFixed(1)}px`;
-        node.style.filter = `blur(${blur.toFixed(2)}px)`;
+        node.style.filter = "none";
         node.style.stroke = `rgba(255,255,255,${outlineAlpha.toFixed(2)})`;
         node.style.strokeWidth = `${outlineWidth.toFixed(2)}px`;
-        node.style.fill = isHighlighted
-          ? `hsla(${hue.toFixed(1)}, 96%, 58%, ${alpha.toFixed(2)})`
-          : `rgba(245,243,234,${alpha.toFixed(2)})`;
+        node.style.fill = `hsla(${hue.toFixed(1)}, 96%, 58%, 1)`;
         node.style.textShadow = isHighlighted
           ? `0 0 ${glow.toFixed(1)}px hsla(${hue.toFixed(1)}, 100%, 55%, ${glowAlpha.toFixed(2)})`
           : "none";
