@@ -373,7 +373,7 @@ class _RpmVerticalPainter extends CustomPainter {
         : HSLColor.fromAHSL(1, hue, 0.96, 0.58).toColor();
     const peakFontSize = 66.0;
     final sizeIntensity = pow(intensity, 1.15);
-    final fontSize = peakFontSize * (0.30 + 0.70 * sizeIntensity);
+    final fontSize = peakFontSize * (0.50 + 0.50 * sizeIntensity);
     final outlineWidth = _isAlert ? 1.75 : 0.75 + intensity * 1.35;
     final outlineAlpha =
         _isAlert ? 0.9 * alertOpacity : 0.22 + intensity * 0.68;
